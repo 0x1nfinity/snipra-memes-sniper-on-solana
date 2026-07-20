@@ -1,0 +1,23 @@
+{
+  "name": "snipra",
+  "version": "2.0.0",
+  "description": "Multi-chain memecoin sniper: Solana + EVM (Base, dll). Screening, swap, TP ladder, trailing profit, Telegram, Darwin evolution, LLM analysis.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "DRY_RUN=1 node src/index.js",
+    "screen": "node src/index.js --screen-once"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.95.0",
+    "better-sqlite3": "^12.11.1",
+    "bs58": "^6.0.0",
+    "dotenv": "^16.4.0",
+    "ethers": "^6.13.0",
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}

@@ -1,0 +1,95 @@
+export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export const nowMs = () => Date.now();
+
+export function fmtUsd(n) {
+  if (n == null || isNaN(n)) return '?';
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
+  if (n >= 1) return `$${n.toFixed(2)}`;
+  return `$${n.toPrecision(4)}`;
+}
+
+export function fmtPct(n) {
+  if (n == null || isNaN(n)) return '?';
+  return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`;
+}
+
+export function shortAddr(a) {
+  if (!a) return '?';
+  return a.length > 12 ? `${a.slice(0, 5)}…${a.slice(-4)}` : a;
+}
+
+/** URL token di gmgn.ai — slug per chain dari config (chains.X.gmgnSlug) */
+export function gmgnUrl(gmgnSlug, address) {
+  return `https://gmgn.ai/${gmgnSlug || 'sol'}/token/${address}`;
+}
+
+/** markdown link nama token → gmgn */
+export function tokenLink(symbol, gmgnSlug, address) {
+  return `[${(symbol || '?').replace(/[[\]]/g, '')}](${gmgnUrl(gmgnSlug, address)})`;
+}
+
+export function pnlPct(entry, current) {
+  if (!entry || !current) return 0;
+  return ((current - entry) / entry) * 100;
+}
+
+/** fetch JSON dengan timeout + retry ringan */
+export async function fetchJson(url, opts = {}, { timeoutMs = 15000, retries = 2, retryDelayMs = 1000 } = {}) {
+  let lastErr;
+  for (let i = 0; i <= retries; i++) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { ...opts, signal: ctrl.signal });
+      clearTimeout(t);
+      if (res.status === 429) {
+        lastErr = new Error(`429 rate limited: ${url}`);
+        await sleep(retryDelayMs * (i + 2));
+        continue;
+      }
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status} ${url} :: ${body.slice(0, 300)}`);
+      }
+      return await res.json();
+    } catch (e) {
+      clearTimeout(t);
+      lastErr = e;
+      if (i < retries) await sleep(retryDelayMs * (i + 1));
+    }
+  }
+  throw lastErr;
+}
+
+/** jalankan array of async fn dengan batas concurrency */
+export async function mapLimit(items, limit, fn) {
+  const out = [];
+  let idx = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (idx < items.length) {
+      const i = idx++;
+      try {
+        out[i] = await fn(items[i], i);
+      } catch (e) {
+        out[i] = { __error: e };
+      }
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+export function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+export function randBetween(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+export function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
