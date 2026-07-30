@@ -30,11 +30,11 @@ export class CircuitBreaker {
   }
 
   recordClose(chainKey) {
-    // Reset trip on successful close
-    if (this._trippedUntil && Date.now() >= this._trippedUntil) {
+    // Reset trip on successful close — even during cooldown
+    if (this._trippedUntil) {
       this._trippedUntil = null;
       this._opens = [];
-      log.info('Circuit breaker reset — cooldown selesai.');
+      log.info('Circuit breaker reset by position close.');
     }
   }
 
