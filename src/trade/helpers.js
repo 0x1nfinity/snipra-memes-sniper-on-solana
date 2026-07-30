@@ -4,6 +4,7 @@ import { findOpen, inCooldown, openPositions, addPosition, closePosition,
 import { tokenPairs, bestPair, normalizePair } from '../screener/dexscreener.js';
 import { shortAddr } from '../utils.js';
 import { createLogger } from '../logger.js';
+import { breaker } from './circuit-breaker.js';
 
 const log = createLogger('trade');
 
@@ -38,6 +39,8 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
   if (chainCount >= cfg.trading.maxPerChain)
     throw new Error(`maxPerChain ${chainKey} (${cfg.trading.maxPerChain}) tercapai`);
 
+  breaker.check(chainKey);
+
   const amount = amountNative;
   const res = await executor.buy(chainKey, c.address, amount, { labels: c.labels });
   const pos = addPosition({
@@ -53,6 +56,7 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
     genomeId: c.genomeId || null,
     llmVerdict: c.llmVerdict || null,
   });
+  breaker.recordOpen(chainKey);
   log.info(`posisi dibuka [${source}]: ${c.symbol} @ ${c.priceUsd}`);
   return { ...pos, txid: res.txid };
 }

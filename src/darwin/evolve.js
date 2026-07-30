@@ -2,6 +2,7 @@ import { GENE_SPACE } from './darwin.js';
 import { fmtPct } from '../utils.js';
 import { getActiveMode } from '../config.js';
 import { createLogger } from '../logger.js';
+import { breaker } from '../trade/circuit-breaker.js';
 
 const log = createLogger('evolve');
 
@@ -109,6 +110,7 @@ export async function runEvolve(trigger = 'manual', deps) {
 // ===== feedback loop: trade close → darwin fitness + LLM lesson =====
 
 export function onTradeClosed(trade) {
+  breaker.recordClose(trade.chain);
   const { darwin, llm, getConfig } = _deps;
   const cfg = getConfig();
   if (cfg.darwin.enabled) {

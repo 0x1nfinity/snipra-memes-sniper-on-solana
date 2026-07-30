@@ -13,6 +13,7 @@ import { fmtUsd, fmtPct, tokenLink } from './utils.js';
 import { chainBlocks, marketLine, communityLine, llmLine } from './telegram/fmt.js';
 import { createLogger } from './logger.js';
 import { resolveCandidate, buyToken, sellToken } from './trade/helpers.js';
+import { CircuitBreaker } from './trade/circuit-breaker.js';
 import { runEvolve, onTradeClosed, setEvolveDeps } from './darwin/evolve.js';
 import { sendStatusReport, startStatusLoop, stopStatusLoop, setStatusDeps } from './telegram/reports.js';
 
