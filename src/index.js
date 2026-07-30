@@ -14,6 +14,7 @@ import { tokenPairs, bestPair, normalizePair } from './screener/dexscreener.js';
 import { fmtUsd, fmtPct, shortAddr, tokenLink, sleep } from './utils.js';
 import { chainBlocks, marketLine, communityLine, llmLine, fmtNative, chainHeader, fmtHold } from './telegram/fmt.js';
 import { createLogger } from './logger.js';
+import { effectiveMax } from './trade/helpers.js';
 
 const log = createLogger('main');
 
@@ -60,9 +61,9 @@ async function buyToken(chainKey, address, amountNative, source, candidate) {
   if (inCooldown(chainKey, c.address, cfg.trading.cooldownMinutes))
     throw new Error(`${c.symbol} masih cooldown`);
   // single-chain: batas efektif = maxPerChain; both: total maxPositions + per-chain
-  const effectiveMax = cfg.activeChain === 'both' ? cfg.trading.maxPositions : cfg.trading.maxPerChain;
-  if (openPositions().length >= effectiveMax)
-    throw new Error(`max posisi (${effectiveMax}) tercapai`);
+  const effMax = effectiveMax(cfg);
+  if (openPositions().length >= effMax)
+    throw new Error(`max posisi (${effMax}) tercapai`);
   const chainCount = openPositions().filter((p) => p.chain === chainKey).length;
   if (chainCount >= cfg.trading.maxPerChain)
     throw new Error(`maxPerChain ${chainKey} (${cfg.trading.maxPerChain}) tercapai`);
@@ -491,10 +492,10 @@ async function sendStatusReport() {
       `📂 Posisi (${chainPos.length}):\n${posLines}`
     );
   }
-  const effectiveMax = cfg.activeChain === 'both' ? cfg.trading.maxPositions : cfg.trading.maxPerChain;
+  const effMax = effectiveMax(cfg);
   telegram.notify(
     `📊 *Laporan berkala* · ${cfg.mode}\n` +
-    `Total posisi ${openPositions().length}/${effectiveMax} · Moonbag ${moonbags().length} · Auto-buy ${paused ? '⏸' : '▶️'}\n\n` +
+    `Total posisi ${openPositions().length}/${effMax} · Moonbag ${moonbags().length} · Auto-buy ${paused ? '⏸' : '▶️'}\n\n` +
     blocks.join('\n\n')
   );
 }
