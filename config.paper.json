@@ -1,0 +1,114 @@
+{
+  "activeChain": "solana",
+  "paper": {
+    "startBalance": {
+      "solana": 10,
+      "robinhood": 1
+    }
+  },
+  "chains": {
+    "solana": {
+      "enabled": true,
+      "type": "solana",
+      "dexscreenerId": "solana",
+      "gmgnSlug": "sol",
+      "buyAmount": 0.04,
+      "executor": "jupiter",
+      "priorityFee": "auto"
+    },
+    "robinhood": {
+      "enabled": false,
+      "type": "evm",
+      "dexscreenerId": "robinhood",
+      "gmgnSlug": "robinhood",
+      "chainIdNum": 4663,
+      "rpcEnv": "ROBINHOOD_RPC_URL",
+      "buyAmount": 0.04,
+      "weth": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      "v3SwapRouter02": "0xcaf681a66d020601342297493863e78c959e5cb2",
+      "v3QuoterV2": "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
+      "v2Router": "0x89e5db8b5aa49aa85ac63f691524311aeb649eba",
+      "gasLimitSwap": 400000
+    }
+  },
+  "screener": {
+    "intervalSec": 1800,
+    "maxCandidatesPerCycle": 10,
+    "sources": {
+      "tokenProfiles": true,
+      "boostsLatest": true,
+      "boostsTop": true
+    },
+    "filters": {
+      "minVolume24hUsd": 10000,
+      "minAgeMinutes": 120,
+      "maxAgeHours": 168,
+      "minLiquidityUsd": 15000,
+      "minMarketCapUsd": 10000,
+      "maxMarketCapUsd": 5000000,
+      "minHolders": 100,
+      "minTraders24h": 150,
+      "minBuySellRatio": 0.9,
+      "maxPriceDropH1Pct": 25,
+      "minVolLiqRatio": 0.5,
+      "requireSocials": false,
+      "blockHoneypot": true,
+      "maxTop10Pct": 70,
+      "strictSecurity": false
+    },
+    "entryGuard": {
+      "enabled": true,
+      "athPullbackPct": 30,
+      "maxGainH1Pct": 150,
+      "maxGainH24Pct": 400,
+      "runThresholdPct": 200
+    }
+  },
+  "trading": {
+    "slippageBps": 50,
+    "maxPositions": 4,
+    "maxPerChain": 2,
+    "minSwapUsd": 1,
+    "cooldownMinutes": 240,
+    "stopLossPct": -20,
+    "slFlashDropPct": 40,
+    "priceMinLiquidityUsd": 300
+  },
+  "tpLadder": [
+    {
+      "gainPct": 100,
+      "sellPct": 55
+    }
+  ],
+  "trailing": {
+    "enabled": true,
+    "activateGainPct": 5,
+    "trailPct": 3,
+    "moonbagPct": 10
+  },
+  "monitor": {
+    "intervalSec": 10
+  },
+  "darwin": {
+    "enabled": true,
+    "populationSize": 8,
+    "evolveEveryNTrades": 50,
+    "mutationRate": 0.35,
+    "exploreRate": 0.25,
+    "minTradesForFitness": 3
+  },
+  "llm": {
+    "enabled": true,
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "gateBuy": true,
+    "minConfidence": 0.35,
+    "maxLessons": 12,
+    "tools": true
+  },
+  "telegram": {
+    "notifyScreening": true,
+    "notifyPriceMoves": false,
+    "statusIntervalMin": 30
+  }
+}

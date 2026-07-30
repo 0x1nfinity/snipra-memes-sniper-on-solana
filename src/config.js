@@ -6,22 +6,45 @@ import { createLogger } from './logger.js';
 const log = createLogger('config');
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = path.join(__dirname, '..', 'data');
-// Config utama di ROOT project agar mudah diedit manual (nano/vscode).
-const CONFIG_FILE = path.join(__dirname, '..', 'config.json');
+const ROOT_DIR = path.join(__dirname, '..');
+
+// Marker file: last line contains the active mode ("paper" or "live")
+const MODE_FILE = path.join(DATA_DIR, '.mode');
+
+function readModeMarker() {
+  // Priority: SNIPRA_MODE env var > .mode file > default "paper"
+  if (process.env.SNIPRA_MODE === 'paper' || process.env.SNIPRA_MODE === 'live') {
+    return process.env.SNIPRA_MODE;
+  }
+  try {
+    const content = fs.readFileSync(MODE_FILE, 'utf8').trim();
+    if (content === 'paper' || content === 'live') return content;
+  } catch { /* file doesn't exist yet */ }
+  return 'paper'; // safe default
+}
+
+function writeModeMarker(mode) {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(MODE_FILE, `${mode}\n`);
+}
+
+/** Path ke config file untuk mode tertentu */
+function configFileFor(mode) {
+  return path.join(ROOT_DIR, `config.${mode}.json`);
+}
 
 /**
- * DEFAULTS = fallback bila field tidak ada di config.json.
+ * DEFAULTS = fallback bila field tidak ada di config.<mode>.json.
+ * Mode is now external — stored in data/.mode marker file (not in config).
  * Semua nilai bisa diubah dua arah:
- *   - edit langsung config.json di root (dibaca saat start)
+ *   - edit langsung config.<mode>.json di root (dibaca saat start)
  *   - runtime lewat Telegram: /set screener.filters.minLiquidityUsd 30000
- *     (dipersist balik ke config.json yang sama)
+ *     (dipersist balik ke config.<mode>.json yang sama)
  */
 export const DEFAULTS = {
   // 'paper' = trade simulasi penuh (harga real, saldo virtual, PnL dicatat ke SQLite)
   // 'live'  = transaksi on-chain sungguhan
-  mode: 'paper',
-  // 'solana' | 'robinhood' | 'both' — chain mana yang boleh open posisi baru.
-  // Jika bukan 'both', batas posisi memakai trading.maxPerChain (bukan maxPositions).
+  // Mode TIDAK disimpan di sini — dibaca dari data/.mode marker file.
   activeChain: 'both',
   paper: {
     // saldo virtual awal per chain, dalam NATIVE (SOL/ETH).
@@ -161,55 +184,105 @@ function deepMerge(base, override) {
   return out;
 }
 
-let config = structuredClone(DEFAULTS);
+let activeMode = null;
+let config = null;
+let configWatcher = null;
 
 export function loadConfig() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (fs.existsSync(CONFIG_FILE)) {
+
+  activeMode = readModeMarker();
+  writeModeMarker(activeMode); // ensure file exists
+
+  // Migrate old config.json to new split files BEFORE loading,
+  // so migrated values are picked up right away.
+  migrateOldConfig();
+
+  const file = configFileFor(activeMode);
+  if (fs.existsSync(file)) {
     try {
-      const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+      const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
       config = deepMerge(structuredClone(DEFAULTS), saved);
-      log.info('config loaded from config.json (root)');
+      log.info(`config loaded from config.${activeMode}.json`);
     } catch (e) {
-      log.error('config.json rusak, pakai defaults:', e.message);
+      log.error(`config.${activeMode}.json rusak, pakai defaults:`, e.message);
+      config = structuredClone(DEFAULTS);
     }
   } else {
-    saveConfig(); // generate config.json default di root saat pertama kali jalan
-    log.info('config.json belum ada — dibuat dengan nilai default');
+    // First run: create config file from defaults
+    config = structuredClone(DEFAULTS);
+    saveConfig();
+    log.info(`config.${activeMode}.json belum ada — dibuat dengan nilai default`);
   }
-  if (process.env.DRY_RUN === '1' && config.mode !== 'paper') {
-    // Jangan diam-diam: config.json minta live tapi .env DRY_RUN=1 memaksa paper.
-    log.warn(`⚠️ DRY_RUN=1 di .env MEMAKSA mode 'paper' walau config.json mode='${config.mode}'. Set DRY_RUN=0 untuk live.`);
+
+  // DRY_RUN override: jika diset, paksa paper
+  if (process.env.DRY_RUN === '1') {
+    if (activeMode !== 'paper') {
+      log.warn(`⚠️ DRY_RUN=1 di .env MEMAKSA mode 'paper' walau mode='${activeMode}'. Set DRY_RUN=0 untuk live.`);
+      activeMode = 'paper';
+    }
   }
-  if (process.env.DRY_RUN === '1') config.mode = 'paper'; // kompat lama: DRY_RUN memaksa paper
+
   return config;
 }
 
+/** One-time migration: if config.json exists but config.paper.json doesn't */
+function migrateOldConfig() {
+  const oldFile = path.join(ROOT_DIR, 'config.json');
+  const paperFile = configFileFor('paper');
+  const liveFile = configFileFor('live');
+
+  if (fs.existsSync(oldFile) && !fs.existsSync(paperFile) && !fs.existsSync(liveFile)) {
+    try {
+      const old = JSON.parse(fs.readFileSync(oldFile, 'utf8'));
+      // Create both paper and live configs from old unified config
+      const paperCfg = deepMerge(structuredClone(DEFAULTS), { ...old, mode: undefined });
+      const liveCfg = deepMerge(structuredClone(DEFAULTS), { ...old, mode: undefined });
+      fs.writeFileSync(paperFile, JSON.stringify(paperCfg, null, 2));
+      fs.writeFileSync(liveFile, JSON.stringify(liveCfg, null, 2));
+      // Rename old file so we don't migrate again
+      fs.renameSync(oldFile, `${oldFile}.migrated-${Date.now()}.bak`);
+      log.info('migrated config.json → config.paper.json + config.live.json (old file backed up)');
+    } catch (e) {
+      log.warn('config migration failed:', e.message);
+    }
+  }
+}
+
 export function saveConfig() {
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  if (!activeMode) return;
+  const file = configFileFor(activeMode);
+  // Strip mode if somehow present
+  const toSave = { ...config };
+  delete toSave.mode;
+  fs.writeFileSync(file, JSON.stringify(toSave, null, 2));
 }
 
 // Path timer yang butuh restart loop (bukan sekadar nilai) kalau diubah dari disk.
 const TIMER_PATHS = ['screener.intervalSec', 'monitor.intervalSec', 'telegram.statusIntervalMin'];
 
 /**
- * Baca ulang config.json dari disk ke objek in-memory (hot-reload).
+ * Baca ulang config.<mode>.json dari disk ke objek in-memory (hot-reload).
  * Dipakai agar edit manual file langsung berlaku tanpa restart proses.
  * Aman terhadap self-write (nilai sama → changed:false) & JSON setengah tertulis.
  * @returns {{changed: boolean, timersChanged: boolean}}
  */
 export function reloadConfig() {
-  if (!fs.existsSync(CONFIG_FILE)) return { changed: false, timersChanged: false };
+  if (!activeMode) return { changed: false, timersChanged: false };
+  const file = configFileFor(activeMode);
+  if (!fs.existsSync(file)) return { changed: false, timersChanged: false };
   let saved;
   try {
-    saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    saved = JSON.parse(fs.readFileSync(file, 'utf8'));
   } catch (e) {
-    // editor mungkin sedang menulis (JSON belum lengkap) — lewati, poll berikut coba lagi
-    log.debug('reload config.json dilewati (JSON belum valid):', e.message);
+    log.debug('reload config dilewati (JSON belum valid):', e.message);
     return { changed: false, timersChanged: false };
   }
   const next = deepMerge(structuredClone(DEFAULTS), saved);
-  if (process.env.DRY_RUN === '1') next.mode = 'paper';
+  delete next.mode;
+  if (process.env.DRY_RUN === '1' && activeMode !== 'paper') {
+    // DRY_RUN override — jangan ubah config, cukup catat
+  }
   const prev = config;
   const changed = JSON.stringify(next) !== JSON.stringify(prev);
   const pick = (o, p) => p.split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
@@ -219,22 +292,82 @@ export function reloadConfig() {
 }
 
 /**
- * Pantau config.json di disk; panggil reloadConfig() tiap kali berubah.
+ * Ganti mode (paper ↔ live). Simpan config aktif ke file, lalu load config
+ * dari file mode baru. Return mode baru.
+ */
+export function switchMode(newMode) {
+  if (newMode !== 'paper' && newMode !== 'live') {
+    throw new Error(`mode tidak valid: ${newMode} (harus paper atau live)`);
+  }
+  if (newMode === activeMode) return activeMode;
+
+  // Save current config first
+  saveConfig();
+
+  // Switch
+  const oldMode = activeMode;
+  activeMode = newMode;
+  writeModeMarker(activeMode);
+
+  // Load other config file
+  const file = configFileFor(activeMode);
+  if (fs.existsSync(file)) {
+    try {
+      const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+      config = deepMerge(structuredClone(DEFAULTS), saved);
+      log.info(`switched mode ${oldMode} → ${activeMode}, config loaded from config.${activeMode}.json`);
+    } catch (e) {
+      log.error(`config.${activeMode}.json rusak saat switch:`, e.message);
+      config = structuredClone(DEFAULTS);
+    }
+  } else {
+    // New mode has no config yet — seed from defaults
+    config = structuredClone(DEFAULTS);
+    saveConfig();
+    log.info(`config.${activeMode}.json dibuat dari defaults (mode baru)`);
+  }
+
+  // Update watcher to track new active file
+  if (configWatcher) {
+    fs.unwatchFile(configFileFor(oldMode));
+    fs.watchFile(configFileFor(activeMode), { interval: 2000 }, () => {
+      const res = reloadConfig();
+      if (res.changed) {
+        log.info(`config.${activeMode}.json berubah di disk — dimuat ulang tanpa restart`);
+        configChangeCallback?.(res);
+      }
+    });
+  }
+
+  return activeMode;
+}
+
+export function getActiveMode() {
+  return activeMode;
+}
+
+let configChangeCallback = null;
+
+/**
+ * Pantau config.<mode>.json di disk; panggil reloadConfig() tiap kali berubah.
  * Pakai watchFile (polling) agar tahan terhadap simpan-atomic editor (nano/vscode).
  * onChange({changed, timersChanged}) dipanggil hanya saat ada perubahan nyata.
  */
 export function watchConfig(onChange) {
+  configChangeCallback = onChange;
+  configWatcher = true;
+  const file = configFileFor(activeMode);
   try {
-    fs.watchFile(CONFIG_FILE, { interval: 2000 }, () => {
+    fs.watchFile(file, { interval: 2000 }, () => {
       const res = reloadConfig();
       if (res.changed) {
-        log.info('config.json berubah di disk — dimuat ulang tanpa restart');
+        log.info(`config.${activeMode}.json berubah di disk — dimuat ulang tanpa restart`);
         onChange?.(res);
       }
     });
-    log.info('hot-reload config.json aktif (pantau tiap 2s)');
+    log.info(`hot-reload config.${activeMode}.json aktif (pantau tiap 2s)`);
   } catch (e) {
-    log.error('gagal memasang watcher config.json:', e.message);
+    log.error('gagal memasang watcher config:', e.message);
   }
 }
 

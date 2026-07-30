@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { DATA_DIR, getConfig } from '../config.js';
+import { DATA_DIR, getActiveMode } from '../config.js';
 import { recordTradeDb } from '../db.js';
 import { pnlPct } from '../utils.js';
 import { createLogger } from '../logger.js';
@@ -28,7 +28,7 @@ let state = freshState();
 let loadedMode = null; // mode yang sedang dimuat di memori (paper|live)
 
 export function loadState() {
-  loadedMode = getConfig().mode;
+  loadedMode = getActiveMode();
   state = freshState(); // reset dulu agar tidak membawa sisa mode sebelumnya
   const file = fileForMode(loadedMode);
   if (fs.existsSync(file)) {
@@ -45,13 +45,13 @@ export function loadState() {
 }
 
 /**
- * Dipanggil setiap kali cfg.mode berubah (hot-reload config.json / /mode / /set mode).
+ * Dipanggil setiap kali mode berubah (/mode / /set mode / switchMode).
  * Muat ulang state in-memory dari file mode yang baru supaya paper & live tak menyatu.
  * @returns {boolean} true bila mode benar-benar berganti (state di-reload).
  */
 export function syncStateMode() {
-  if (getConfig().mode === loadedMode) return false;
-  log.info(`mode berubah ${loadedMode} → ${getConfig().mode}: reload state dari file mode baru`);
+  if (getActiveMode() === loadedMode) return false;
+  log.info(`mode berubah ${loadedMode} → ${getActiveMode()}: reload state dari file mode baru`);
   loadState();
   return true;
 }
@@ -77,7 +77,7 @@ function persistNow() {
 }
 
 function _writeState(modeOverride) {
-  const mode = modeOverride || loadedMode || getConfig().mode;
+  const mode = modeOverride || loadedMode || getActiveMode();
   const file = fileForMode(mode);
   const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
@@ -181,7 +181,7 @@ export function closePosition(pos, { reason, receivedNative, txid }) {
 
   // riwayat permanen ke SQLite (paper & live sama-sama tercatat, dibedakan kolom mode)
   try {
-    recordTradeDb(trade, getConfig().mode);
+    recordTradeDb(trade, getActiveMode());
   } catch (e) {
     log.error('recordTradeDb gagal:', e.message);
   }

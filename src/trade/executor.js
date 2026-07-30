@@ -1,4 +1,4 @@
-import { getConfig } from '../config.js';
+import { getConfig, getActiveMode } from '../config.js';
 import { SolanaChain } from '../chains/solana.js';
 import { EvmChain } from '../chains/evm.js';
 import { PaperChain } from './paper.js';
@@ -26,12 +26,12 @@ export class Executor {
 
   _build() {
     const cfg = getConfig();
-    this.mode = cfg.mode;
+    this.mode = getActiveMode();
     this.chains.clear();
     for (const [key, c] of Object.entries(cfg.chains)) {
       if (!c.enabled) continue;
       try {
-        if (cfg.mode === 'paper') {
+        if (getActiveMode() === 'paper') {
           this.chains.set(key, new PaperChain(key, c));
         } else {
           this.chains.set(
@@ -42,15 +42,15 @@ export class Executor {
           );
         }
       } catch (e) {
-        log.error(`init chain ${key} (${cfg.mode}) gagal:`, e.message);
+        log.error(`init chain ${key} (${getActiveMode()}) gagal:`, e.message);
       }
     }
-    log.info(`executor mode=${cfg.mode}, chains: ${[...this.chains.keys()].join(', ')}`);
+    log.info(`executor mode=${getActiveMode()}, chains: ${[...this.chains.keys()].join(', ')}`);
   }
 
-  /** panggil setelah cfg.mode berubah (telegram /mode) */
+  /** panggil setelah mode berubah (telegram /mode) */
   syncMode() {
-    if (getConfig().mode !== this.mode) this._build();
+    if (getActiveMode() !== this.mode) this._build();
   }
 
   chain(key) {
@@ -91,7 +91,7 @@ export class Executor {
     }
 
     const balance = await chain.nativeBalance();
-    const reserve = cfg.mode === 'live' ? (chainCfg.type === 'solana' ? GAS_RESERVE.solana : GAS_RESERVE.evm) : 0;
+    const reserve = getActiveMode() === 'live' ? (chainCfg.type === 'solana' ? GAS_RESERVE.solana : GAS_RESERVE.evm) : 0;
     if (balance - reserve < amount) {
       throw new Error(
         `saldo ${chainKey} tidak cukup: ${balance.toFixed(6)} native` +

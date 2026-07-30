@@ -1,5 +1,5 @@
 import TelegramBot from 'node-telegram-bot-api';
-import { getConfig, getPath, setPath } from '../config.js';
+import { getConfig, getPath, setPath, getActiveMode, switchMode } from '../config.js';
 import { openPositions, statsSummary, currentPnlPct, getState, moonbags } from '../positions/state.js';
 import { recentTrades, tradeStats } from '../db.js';
 import { tokenPairs, bestPair, normalizePair, search } from '../screener/dexscreener.js';
@@ -142,7 +142,7 @@ export class Telegram {
     log.info('telegram bot polling dimulai');
     const cfg = getConfig();
     this.notify(
-      `🤖 *snipra v2 online* · ${cfg.mode === 'paper' ? '📝 paper' : '🔴 LIVE'}\n` +
+      `🤖 *snipra v2 online* · ${getActiveMode() === 'paper' ? '📝 paper' : '🔴 LIVE'}\n` +
       `Chain: ${Object.entries(cfg.chains).filter(([, c]) => c.enabled).map(([k]) => `${chainEmoji(k)} ${k}`).join(' · ')}\n` +
       `Ketik /help untuk daftar perintah.`
     );
@@ -287,7 +287,7 @@ export class Telegram {
     const head = view === 'filter' ? '🎛 *Menu · Filter Screening*' : '🎛 *Menu Pengaturan*';
     return (
       `${head}\n` +
-      `Mode: ${cfg.mode === 'paper' ? '📝 paper' : '🔴 LIVE'} · Chain: ${cfg.activeChain} · Auto-buy: ${this.deps.isPaused() ? '⏸ off' : '▶️ on'}\n` +
+      `Mode: ${getActiveMode() === 'paper' ? '📝 paper' : '🔴 LIVE'} · Chain: ${cfg.activeChain} · Auto-buy: ${this.deps.isPaused() ? '⏸ off' : '▶️ on'}\n` +
       (view === 'filter'
         ? `Atur hard filter. LLM/Darwin via /set.`
         : `Tombol di bawah. Filter screening → 🔧, teknis via /set.`)
@@ -301,8 +301,8 @@ export class Telegram {
 
     if (view === 'main') {
       rows.push([
-        { text: `${mark(cfg.mode === 'paper')}📝 paper`, callback_data: 'm:mode:paper' },
-        { text: `${mark(cfg.mode === 'live')}🔴 live`, callback_data: 'm:mode:live' },
+        { text: `${mark(getActiveMode() === 'paper')}📝 paper`, callback_data: 'm:mode:paper' },
+        { text: `${mark(getActiveMode() === 'live')}🔴 live`, callback_data: 'm:mode:live' },
       ]);
       rows.push([
         { text: `${mark(cfg.activeChain === 'solana')}🟪 solana`, callback_data: 'm:chain:solana' },
@@ -362,7 +362,7 @@ export class Telegram {
           chat_id: q.message.chat.id, message_id: q.message.message_id,
         }).catch(() => {});
       case 'mode':
-        setPath('mode', arg);
+        switchMode(arg);
         this.deps.applyMode();
         return editMenu('main', `Mode → ${arg}`);
       case 'chain':
@@ -421,7 +421,7 @@ export class Telegram {
    * tertukar — sumber utama kebingungan "mode live tapi datanya paper".
    */
   notify(text) {
-    const badge = getConfig().mode === 'live' ? '🔴 LIVE' : '📝 PAPER';
+    const badge = getActiveMode() === 'live' ? '🔴 LIVE' : '📝 PAPER';
     this._send(`${badge}\n${text}`).catch((e) => log.warn(`notify gagal: ${e.message}`));
   }
 
@@ -443,10 +443,10 @@ export class Telegram {
           ([k, b]) => `${chainEmoji(k)} ${k}: ${b.error ? `⚠️ ${b.error}` : `*${b.native?.toFixed(4)} ${nativeSym(k)}*`} · ${shortAddr(b.address)}`
         );
         return this._send(
-          `⚙️ *Status* · ${cfg.mode === 'paper' ? '📝 paper' : '🔴 LIVE'}\n\n` +
+          `⚙️ *Status* · ${getActiveMode() === 'paper' ? '📝 paper' : '🔴 LIVE'}\n\n` +
           `Auto-buy ${d.isPaused() ? '⏸ paused' : '▶️ aktif'} · Posisi ${openPositions().length}/${effectiveMax} · Moonbag ${moonbags().length}\n` +
           `🧠 LLM ${cfg.llm.enabled ? cfg.llm.provider : 'off'} · 🧬 Darwin ${cfg.darwin.enabled ? 'on' : 'off'}\n\n` +
-          `*Saldo${cfg.mode === 'paper' ? ' (virtual)' : ''}*\n${lines.join('\n')}`
+          `*Saldo${getActiveMode() === 'paper' ? ' (virtual)' : ''}*\n${lines.join('\n')}`
         );
       }
 
@@ -461,8 +461,15 @@ export class Telegram {
       case '/set': {
         if (args.length < 2) return this._send('Usage: /set <path> <value>');
         const path = args[0];
+        // Mode switching uses dedicated switchMode() — not setPath
+        if (path === 'mode') {
+          const m = args.slice(1).join(' ').toLowerCase();
+          if (m !== 'paper' && m !== 'live') return this._send('Mode harus `paper` atau `live`.');
+          switchMode(m);
+          d.applyMode();
+          return this._send(`✅ Mode → \`${m}\``);
+        }
         const value = setPath(path, args.slice(1).join(' '));
-        if (path === 'mode') d.applyMode();
         // interval screening/monitor/laporan langsung diterapkan tanpa restart bot
         if (['screener.intervalSec', 'monitor.intervalSec', 'telegram.statusIntervalMin'].includes(path)) {
           d.restartLoops();
@@ -474,7 +481,7 @@ export class Telegram {
       case '/mode': {
         const m = args[0];
         if (m !== 'paper' && m !== 'live') return this._send('Usage: /mode paper|live');
-        setPath('mode', m);
+        switchMode(m);
         d.applyMode();
         return this._send(
           m === 'paper'

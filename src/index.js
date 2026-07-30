@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { loadConfig, getConfig, watchConfig } from './config.js';
+import { loadConfig, getConfig, watchConfig, getActiveMode } from './config.js';
 import { initDb } from './db.js';
 import { loadState, syncStateMode, openPositions, findOpen, inCooldown, addPosition, statsSummary, currentPnlPct, moonbags } from './positions/state.js';
 import { recentTrades, tradeStatsByChain } from './db.js';
@@ -27,7 +27,7 @@ const executor = new Executor();
 // Terapkan perubahan mode (paper↔live) ke SELURUH subsistem yang mode-aware:
 //  - executor: rebuild chain (paper vs on-chain)
 //  - state:    reload posisi/stats dari file mode yang benar (positions.<mode>.json)
-// Dipanggil dari hot-reload config.json maupun perintah Telegram /mode & /set mode.
+// Dipanggil dari hot-reload config.<mode>.json maupun perintah Telegram /mode & /set mode.
 function applyMode() {
   executor.syncMode();
   syncStateMode();
@@ -68,7 +68,7 @@ async function buyToken(chainKey, address, amountNative, source, candidate) {
   if (chainCount >= cfg.trading.maxPerChain)
     throw new Error(`maxPerChain ${chainKey} (${cfg.trading.maxPerChain}) tercapai`);
 
-  // sizing: SELALU ikut config.json (chains.<key>.buyAmount) apa adanya —
+  // sizing: SELALU ikut config.<mode>.json (chains.<key>.buyAmount) apa adanya —
   // TIDAK lagi diskalakan LLM sizeMult/score. amount eksplisit (mis. /buy <amt>)
   // tetap dihormati; jika kosong, executor.buy memakai buyAmount persis.
   const amount = amountNative;
@@ -157,7 +157,7 @@ function geneDiffLines(currentFilters, proposed) {
  * ANALISA EVOLUSI (advisory) — TIDAK mengubah apa pun otomatis.
  * Menggabungkan data fitness Darwin (genome terbaik yang teruji) + analisa LLM,
  * lalu mengirim NOTIFIKASI berisi usulan perubahan filter. User menerapkan sendiri
- * (lewat /menu, /set, atau edit config.json — hot-reload aktif).
+ * (lewat /menu, /set, atau edit config.<mode>.json — hot-reload aktif).
  */
 async function runEvolve(trigger = 'manual') {
   const cfg = getConfig();
@@ -177,7 +177,7 @@ async function runEvolve(trigger = 'manual') {
         geneSpace: GENE_SPACE,
         currentFilters: filters,
         genomes: st.genomes.map((g) => ({ id: g.id, fitness: +g.fitness.toFixed(2), trades: g.trades, avgPnl: +g.avgPnl.toFixed(1), genes: g.genes })),
-        trades: recentTrades(cfg.mode, 20).map((t) => ({
+        trades: recentTrades(getActiveMode(), 20).map((t) => ({
           symbol: t.symbol, chain: t.chain, pnlPct: +(t.pnl_pct ?? 0).toFixed(1),
           reason: t.close_reason, holdMin: Math.round(t.hold_minutes ?? 0),
         })),
@@ -213,7 +213,7 @@ async function runEvolve(trigger = 'manual') {
   } else if (cfg.llm.enabled) {
     parts.push(`\n🧠 *LLM* — tidak ada usulan`);
   }
-  parts.push(`\n_Terapkan manual bila setuju: /menu · /set · atau edit config.json (hot-reload)._`);
+  parts.push(`\n_Terapkan manual bila setuju: /menu · /set · atau edit config.<mode>.json (hot-reload)._`);
 
   telegram.notify(parts.join('\n'));
   darwin.resetEvolveCounter(); // reset kuota agar tidak memicu tiap trade berikutnya
@@ -232,11 +232,11 @@ function botContext() {
     .map((k) => `${k.toUpperCase()}: ${byChain[k].join(', ')}`)
     .join('\n') || '(tidak ada posisi terbuka)';
   const st = darwin.status();
-  const lastTrades = recentTrades(cfg.mode, 5)
+  const lastTrades = recentTrades(getActiveMode(), 5)
     .map((t) => `${t.symbol} ${(t.pnl_pct ?? 0).toFixed(1)}% (${t.close_reason})`)
     .join('; ') || '(belum ada)';
   return (
-    `mode=${cfg.mode}, activeChain=${cfg.activeChain}, screening tiap ${cfg.screener.intervalSec}s, monitor tiap ${cfg.monitor.intervalSec}s\n` +
+    `mode=${getActiveMode()}, activeChain=${cfg.activeChain}, screening tiap ${cfg.screener.intervalSec}s, monitor tiap ${cfg.monitor.intervalSec}s\n` +
     `Posisi terbuka (${openPositions().length}):\n${posBlock}\n` +
     `Statistik: ${s.totalTrades} trades, win rate ${s.winRatePct.toFixed(1)}%, avg PnL ${s.avgPnlPct.toFixed(1)}%\n` +
     `Trade terakhir: ${lastTrades}\n` +
@@ -440,7 +440,7 @@ function startScreeningLoop() {
 }
 
 // Restart ketiga timer (screening/monitor/status) — dipakai saat interval diubah
-// via /set atau via edit manual config.json (hot-reload).
+// via /set atau via edit manual config.<mode>.json (hot-reload).
 function restartLoops() {
   startScreeningLoop();
   positionManager.start();
@@ -463,7 +463,7 @@ async function sendStatusReport() {
 
   const bal = await executor.balances();
   const realizedByChain = Object.fromEntries(
-    tradeStatsByChain(cfg.mode).map((r) => [r.chain, r])
+    tradeStatsByChain(getActiveMode()).map((r) => [r.chain, r])
   );
   const blocks = [];
   for (const [chainKey, b] of Object.entries(bal)) {
@@ -494,7 +494,7 @@ async function sendStatusReport() {
   }
   const effMax = effectiveMax(cfg);
   telegram.notify(
-    `📊 *Laporan berkala* · ${cfg.mode}\n` +
+    `📊 *Laporan berkala* · ${getActiveMode()}\n` +
     `Total posisi ${openPositions().length}/${effMax} · Moonbag ${moonbags().length} · Auto-buy ${paused ? '⏸' : '▶️'}\n\n` +
     blocks.join('\n\n')
   );
@@ -539,7 +539,7 @@ process.on('unhandledRejection', (e) => log.error('unhandledRejection:', e?.mess
 // ===== entrypoint =====
 
 const cfg = getConfig();
-log.info(`snipra v2 start | mode=${cfg.mode} | chains: ${Object.entries(cfg.chains).filter(([, c]) => c.enabled).map(([k]) => k).join(', ')}`);
+log.info(`snipra v2 start | mode=${getActiveMode()} | chains: ${Object.entries(cfg.chains).filter(([, c]) => c.enabled).map(([k]) => k).join(', ')}`);
 
 if (process.argv.includes('--screen-once')) {
   const { candidates, scanned } = await runScreening({ darwin, llm });
@@ -558,11 +558,11 @@ positionManager.start();
 startScreeningLoop();
 startStatusLoop();
 
-// Hot-reload: edit config.json manual langsung dipakai siklus berikutnya tanpa pm2 restart.
+// Hot-reload: edit config.<mode>.json manual langsung dipakai siklus berikutnya tanpa pm2 restart.
 // Nilai (filter, buyAmount, SL/TP, trailing) sudah dibaca live via getConfig() tiap siklus;
 // hanya perubahan interval timer yang perlu restart loop.
 watchConfig(({ timersChanged }) => {
-  // mode paper↔live diedit manual di config.json → rebuild chain + reload state mode.
+  // mode paper↔live via /mode / /set mode → rebuild chain + reload state.
   // applyMode() no-op bila mode tidak berubah, jadi aman dipanggil tiap reload.
   applyMode();
   if (timersChanged) restartLoops();
