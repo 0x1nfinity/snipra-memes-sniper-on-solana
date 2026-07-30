@@ -95,7 +95,13 @@ export class PositionManager {
         }
         for (const m of moon) {
           const { price, liqUsd } = priceOf(m);
-          if (price > 0 && !(liqUsd > 0 && liqUsd < minLiq)) updateMoonbagPrice(m, price);
+          if (!(price > 0)) continue;
+          // Same sanity guard as active positions: skip low-liquidity pairs
+          if (liqUsd > 0 && liqUsd < minLiq) {
+            log.warn(`moonbag ${m.symbol}: harga $${price} diabaikan (likuiditas $${liqUsd.toFixed(0)} < $${minLiq})`);
+            continue;
+          }
+          updateMoonbagPrice(m, price);
         }
       } catch (e) {
         log.warn(`refresh harga ${chainKey} gagal:`, e.message);
