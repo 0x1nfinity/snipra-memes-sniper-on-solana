@@ -38,8 +38,7 @@
     "sources": {
       "tokenProfiles": true,
       "boostsLatest": true,
-      "boostsTop": true,
-      "trending": true
+      "boostsTop": true
     },
     "filters": {
       "minVolume24hUsd": 10000,

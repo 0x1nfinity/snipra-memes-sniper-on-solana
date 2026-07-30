@@ -56,7 +56,7 @@ export const DEFAULTS = {
   screener: {
     intervalSec: 3600, // screening per jam — hemat API & credit LLM
     maxCandidatesPerCycle: 3,
-    sources: { tokenProfiles: true, boostsLatest: true, boostsTop: true, trending: true },
+    sources: { tokenProfiles: true, boostsLatest: true, boostsTop: true },
     filters: {
       // ===== WAJIB =====
       minVolume24hUsd: 50000, // volume per hari

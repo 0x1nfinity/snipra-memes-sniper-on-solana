@@ -111,26 +111,6 @@ export async function discover(chainMap, sources) {
       }
     }
   }
-
-  // Sumber tambahan: search per chain utk pair volume tinggi terbaru
-  if (sources.trending) {
-    for (const dsChain of wanted) {
-      try {
-        const pairs = await search(dsChain);
-        for (const p of pairs) {
-          if (p.chainId === dsChain && wanted.has(p.chainId) && p?.baseToken?.address) {
-            found.set(`${p.chainId}:${p.baseToken.address}`, {
-              chainId: p.chainId,
-              address: p.baseToken.address,
-            });
-          }
-        }
-      } catch (e) {
-        log.warn(`search ${dsChain} gagal:`, e.message);
-      }
-    }
-  }
-
   const tokens = [...found.values()];
   log.info(`discovery: ${tokens.length} token unik ditemukan`);
 
