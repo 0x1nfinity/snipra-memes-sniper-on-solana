@@ -63,9 +63,10 @@ function persist() {
   // Debounce: batch multiple rapid writes into one.
   // Price updates for N positions in one tick => 1 disk write instead of N.
   if (_persistTimer) clearTimeout(_persistTimer);
+  const modeAtCall = loadedMode;
   _persistTimer = setTimeout(() => {
     _persistTimer = null;
-    _writeState();
+    _writeState(modeAtCall);  // pass captured mode, not current loadedMode
   }, PERSIST_DEBOUNCE_MS);
 }
 
@@ -75,14 +76,16 @@ function persistNow() {
   _writeState();
 }
 
-function _writeState() {
-  // Tulis ke file milik loadedMode (bukan getConfig().mode) supaya bila mode
-  // baru berganti tapi syncStateMode() belum jalan, data lama tidak bocor ke file baru.
-  const file = fileForMode(loadedMode ?? getConfig().mode);
+function _writeState(modeOverride) {
+  const mode = modeOverride || loadedMode || getConfig().mode;
+  const file = fileForMode(mode);
   const tmp = `${file}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
   fs.renameSync(tmp, file);
 }
+
+// Flush pending debounced writes on shutdown
+process.on('beforeExit', () => { if (_persistTimer) persistNow(); });
 
 export function getState() {
   return state;
