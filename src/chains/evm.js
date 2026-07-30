@@ -188,10 +188,12 @@ export class EvmChain {
     }
     if (!this.wallet) throw new Error('wallet EVM belum diset');
 
+    // Capture balance BEFORE swap to compute actual received
+    const ethBefore = await this.provider.getBalance(this.wallet.address);
+
     let tx;
     if (route.kind === 'v3') {
       await this._ensureApproval(tokenAddress, this.cfg.v3SwapRouter02, raw);
-      // exactInputSingle ke ADDRESS_THIS lalu unwrapWETH9 ke wallet, dalam satu multicall
       const swapData = this.v3Router.interface.encodeFunctionData('exactInputSingle', [{
         tokenIn: tokenAddress, tokenOut: weth, fee: route.fee,
         recipient: ADDRESS_THIS, amountIn: raw,
@@ -209,8 +211,13 @@ export class EvmChain {
     }
     const receipt = await tx.wait();
     if (receipt.status !== 1) throw new Error(`sell tx revert: ${tx.hash}`);
-    const receivedNative = Number(ethers.formatEther(route.out)); // estimasi dari quote
-    log.info(`SELL [${this.key}] ${pct}% ${tokenAddress.slice(0, 8)} via ${route.kind} tx ${tx.hash}`);
+
+    // Compute actual ETH received (balance delta), accounting for gas spent
+    const ethAfter = await this.provider.getBalance(this.wallet.address);
+    const gasUsed = receipt.gasUsed * receipt.gasPrice;  // ethers v6: gasUsed and gasPrice are bigints
+    const receivedNative = Number(ethers.formatEther(ethAfter - ethBefore + gasUsed));
+
+    log.info(`SELL [${this.key}] ${pct}% ${tokenAddress.slice(0, 8)} via ${route.kind} tx ${tx.hash} → ${receivedNative.toFixed(6)} ETH`);
     return { txid: tx.hash, soldRaw: raw, receivedNative };
   }
 }
