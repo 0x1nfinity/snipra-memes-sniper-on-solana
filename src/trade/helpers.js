@@ -10,7 +10,8 @@ const log = createLogger('trade');
 
 export function effectiveMax(cfg) {
   const c = cfg || getConfig();
-  return c.activeChain === 'both' ? c.trading.maxPositions : c.trading.maxPerChain;
+  const enabledCount = Object.values(c.chains).filter(ch => ch.enabled).length;
+  return enabledCount > 1 ? c.trading.maxPositions : c.trading.maxPerChain;
 }
 
 export async function resolveCandidate(chainKey, address) {
@@ -25,8 +26,8 @@ export async function resolveCandidate(chainKey, address) {
 
 export async function buyToken(chainKey, address, amountNative, source, candidate, executor, onTradeClosed) {
   const cfg = getConfig();
-  if (cfg.activeChain !== 'both' && cfg.activeChain !== chainKey)
-    throw new Error(`chain ${chainKey} nonaktif (activeChain=${cfg.activeChain})`);
+  if (!cfg.chains[chainKey]?.enabled)
+    throw new Error(`chain ${chainKey} nonaktif`);
   const c = candidate || (await resolveCandidate(chainKey, address));
 
   if (findOpen(chainKey, c.address)) throw new Error(`sudah ada posisi ${c.symbol}`);
