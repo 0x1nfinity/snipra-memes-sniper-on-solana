@@ -28,3 +28,10 @@ pm2.log
 
 # Claude Code
 .claude/
+
+# Config lama (dimigrasi ke config.paper.json + config.live.json)
+config.json
+# Backup migrasi
+config.json.migrated-*.bak
+# Mode marker (ditentukan runtime)
+data/.mode

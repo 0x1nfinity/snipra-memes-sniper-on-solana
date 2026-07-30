@@ -280,9 +280,7 @@ export function reloadConfig() {
   }
   const next = deepMerge(structuredClone(DEFAULTS), saved);
   delete next.mode;
-  if (process.env.DRY_RUN === '1' && activeMode !== 'paper') {
-    // DRY_RUN override — jangan ubah config, cukup catat
-  }
+  // DRY_RUN=1 forced paper mode in loadConfig() — reload doesn't change mode
   const prev = config;
   const changed = JSON.stringify(next) !== JSON.stringify(prev);
   const pick = (o, p) => p.split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
