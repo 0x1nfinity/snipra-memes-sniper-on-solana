@@ -176,8 +176,25 @@ export class SolanaChain {
       raw = (bal.raw * BigInt(Math.floor(pct * 100))) / 10000n;
     }
     if (raw <= 0n) throw new Error(`balance ${tokenAddress.slice(0, 6)} = 0`);
+
+    // Capture SOL balance BEFORE swap
+    const solBefore = this.wallet
+      ? await this.connection.getBalance(this.wallet.publicKey)
+      : 0n;
+
     const res = await this._swap(tokenAddress, SOL_MINT, raw, slippageBps);
-    const receivedNative = Number(res.outAmountRaw) / LAMPORTS_PER_SOL;
+
+    // Compute actual SOL received (balance delta)
+    let receivedNative;
+    if (this.dryRun && !this.wallet) {
+      receivedNative = Number(res.outAmountRaw) / LAMPORTS_PER_SOL;
+    } else {
+      const solAfter = await this.connection.getBalance(this.wallet.publicKey);
+      // Add a small estimate for tx fee since we can't easily get exact fee
+      const TX_FEE_ESTIMATE = 5000n; // 0.000005 SOL typical Jupiter tx fee
+      receivedNative = Number(solAfter - solBefore + TX_FEE_ESTIMATE) / LAMPORTS_PER_SOL;
+    }
+
     log.info(`SELL ${pct}% ${tokenAddress.slice(0, 6)} → ${receivedNative.toFixed(4)} SOL, tx ${res.txid}`);
     return { txid: res.txid, soldRaw: raw, receivedNative };
   }
