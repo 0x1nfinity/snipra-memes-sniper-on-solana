@@ -1,5 +1,4 @@
 {
-  "activeChain": "solana",
   "paper": {
     "startBalance": {
       "solana": 10,
@@ -17,7 +16,7 @@
       "priorityFee": "auto"
     },
     "robinhood": {
-      "enabled": false,
+      "enabled": true,
       "type": "evm",
       "dexscreenerId": "robinhood",
       "gmgnSlug": "robinhood",
