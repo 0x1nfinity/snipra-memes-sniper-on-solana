@@ -176,7 +176,7 @@ const telegram = new Telegram({
   executor,
   darwin,
   llm,
-  buyToken: (chain, addr, amt) => buyToken(chain, addr, amt, 'telegram-button', null, executor, onTradeClosed),
+  buyToken: (chain, addr, amt, source) => buyToken(chain, addr, amt, source || 'telegram-button', null, executor, onTradeClosed),
   sellToken: (addr, pct) => sellToken(addr, pct, executor, onTradeClosed),
   screenNow: () => screeningCycle(true), // screening + langsung buy yang lolos
   runEvolve,

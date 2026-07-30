@@ -1,18 +1,19 @@
 import { getConfig, getActiveMode } from '../../config.js';
 import { openPositions, moonbags, statsSummary, currentPnlPct, getState } from '../../positions/state.js';
 import { fmtUsd, fmtPct, shortAddr, tokenLink } from '../../utils.js';
+import { effectiveMax } from '../../trade/helpers.js';
 import { chainEmoji, nativeSym, chainBlocks, fmtHold } from '../fmt.js';
 
 export async function status(args, msg, deps) {
   const cfg = getConfig();
   const bal = await deps.executor.balances();
-  const effectiveMax = cfg.activeChain === 'both' ? cfg.trading.maxPositions : cfg.trading.maxPerChain;
+  const effMax = effectiveMax(cfg);
   const lines = Object.entries(bal).map(
     ([k, b]) => `${chainEmoji(k)} ${k}: ${b.error ? `⚠️ ${b.error}` : `*${b.native?.toFixed(4)} ${nativeSym(k)}*`} · ${shortAddr(b.address)}`
   );
   return deps.send(
     `⚙️ *Status* · ${getActiveMode() === 'paper' ? '📝 paper' : '🔴 LIVE'}\n\n` +
-    `Auto-buy ${deps.isPaused() ? '⏸ paused' : '▶️ aktif'} · Posisi ${openPositions().length}/${effectiveMax} · Moonbag ${moonbags().length}\n` +
+    `Auto-buy ${deps.isPaused() ? '⏸ paused' : '▶️ aktif'} · Posisi ${openPositions().length}/${effMax} · Moonbag ${moonbags().length}\n` +
     `🧠 LLM ${cfg.llm.enabled ? cfg.llm.provider : 'off'} · 🧬 Darwin ${cfg.darwin.enabled ? 'on' : 'off'}\n\n` +
     `*Saldo${getActiveMode() === 'paper' ? ' (virtual)' : ''}*\n${lines.join('\n')}`
   );
