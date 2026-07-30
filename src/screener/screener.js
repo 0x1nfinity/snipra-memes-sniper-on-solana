@@ -81,11 +81,10 @@ function entryGuardCheck(c, guard) {
 export async function runScreening({ darwin, llm } = {}) {
   const cfg = getConfig();
 
-  // chainMap: dexscreenerId → chainKey (hanya chain enabled + sesuai activeChain)
+  // chainMap: dexscreenerId → chainKey (hanya chain yang enabled)
   const chainMap = {};
   for (const [key, c] of Object.entries(cfg.chains)) {
-    const active = cfg.activeChain === 'both' || cfg.activeChain === key;
-    if (c.enabled && active) chainMap[c.dexscreenerId] = key;
+    if (c.enabled) chainMap[c.dexscreenerId] = key;
   }
   if (Object.keys(chainMap).length === 0) return { candidates: [], genomeId: null, scanned: 0 };
 
