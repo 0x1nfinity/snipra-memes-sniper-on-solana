@@ -45,7 +45,6 @@ export const DEFAULTS = {
   // 'paper' = trade simulasi penuh (harga real, saldo virtual, PnL dicatat ke SQLite)
   // 'live'  = transaksi on-chain sungguhan
   // Mode TIDAK disimpan di sini — dibaca dari data/.mode marker file.
-  activeChain: 'both',
   paper: {
     // saldo virtual awal per chain, dalam NATIVE (SOL/ETH).
     // Alternatif: startBalanceUsd (angka) utk konversi otomatis dari USD.
@@ -399,5 +398,12 @@ export function setPath(pathStr, rawValue) {
   }
   target[last] = value;
   saveConfig();
+  // Notifikasi subsistem yang bergantung pada config (executor rebuild, timer restart).
+  // Tanpa ini, perubahan via /set atau menu callback tidak akan diterapkan karena
+  // reloadConfig() deteksi "no change" (memori sudah sama dengan file di disk).
+  if (configChangeCallback) {
+    const timersChanged = TIMER_PATHS.includes(pathStr);
+    configChangeCallback({ changed: true, timersChanged });
+  }
   return value;
 }
