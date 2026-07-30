@@ -56,7 +56,26 @@ export function syncStateMode() {
   return true;
 }
 
+let _persistTimer = null;
+const PERSIST_DEBOUNCE_MS = 500;
+
 function persist() {
+  // Debounce: batch multiple rapid writes into one.
+  // Price updates for N positions in one tick => 1 disk write instead of N.
+  if (_persistTimer) clearTimeout(_persistTimer);
+  _persistTimer = setTimeout(() => {
+    _persistTimer = null;
+    _writeState();
+  }, PERSIST_DEBOUNCE_MS);
+}
+
+/** Force immediate write (used during shutdown or critical state changes) */
+function persistNow() {
+  if (_persistTimer) { clearTimeout(_persistTimer); _persistTimer = null; }
+  _writeState();
+}
+
+function _writeState() {
   // Tulis ke file milik loadedMode (bukan getConfig().mode) supaya bila mode
   // baru berganti tapi syncStateMode() belum jalan, data lama tidak bocor ke file baru.
   const file = fileForMode(loadedMode ?? getConfig().mode);
@@ -155,7 +174,7 @@ export function closePosition(pos, { reason, receivedNative, txid }) {
   if (pnl >= 0) state.stats.wins += 1;
   else state.stats.losses += 1;
   state.stats.totalPnlPct += pnl;
-  persist();
+  persistNow();
 
   // riwayat permanen ke SQLite (paper & live sama-sama tercatat, dibedakan kolom mode)
   try {
