@@ -188,12 +188,18 @@ export class EvmChain {
     }
     if (!this.wallet) throw new Error('wallet EVM belum diset');
 
-    // Capture balance BEFORE swap to compute actual received
+    // Approvals first (separated from swap tx so ethBefore captures after approval gas)
+    if (route.kind === 'v3') {
+      await this._ensureApproval(tokenAddress, this.cfg.v3SwapRouter02, raw);
+    } else {
+      await this._ensureApproval(tokenAddress, this.cfg.v2Router, raw);
+    }
+
+    // Capture balance AFTER approval (so approval gas doesn't leak into receivedNative)
     const ethBefore = await this.provider.getBalance(this.wallet.address);
 
     let tx;
     if (route.kind === 'v3') {
-      await this._ensureApproval(tokenAddress, this.cfg.v3SwapRouter02, raw);
       const swapData = this.v3Router.interface.encodeFunctionData('exactInputSingle', [{
         tokenIn: tokenAddress, tokenOut: weth, fee: route.fee,
         recipient: ADDRESS_THIS, amountIn: raw,
@@ -202,7 +208,6 @@ export class EvmChain {
       const unwrapData = this.v3Router.interface.encodeFunctionData('unwrapWETH9', [minOut, this.wallet.address]);
       tx = await this.v3Router.multicall([swapData, unwrapData], { gasLimit: this.cfg.gasLimitSwap });
     } else {
-      await this._ensureApproval(tokenAddress, this.cfg.v2Router, raw);
       const deadline = Math.floor(Date.now() / 1000) + 300;
       tx = await this.v2Router.swapExactTokensForETHSupportingFeeOnTransferTokens(
         raw, minOut, [tokenAddress, weth], this.wallet.address, deadline,
