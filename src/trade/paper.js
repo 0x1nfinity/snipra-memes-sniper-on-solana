@@ -9,6 +9,11 @@ import { createLogger } from '../logger.js';
 
 const log = createLogger('paper');
 
+const GAS_FEE_NATIVE = {
+  solana: 0.000005,  // ~5000 lamports per swap
+  evm: 0.0001,       // ~$0.30 at $3000/ETH
+};
+
 /**
  * PaperChain: implementasi interface chain (buy/sell/nativeBalance) yang
  * berperilaku seperti live — harga real-time DexScreener, slippage disimulasikan —
@@ -91,11 +96,12 @@ export class PaperChain {
     const fillPrice = price * (1 + slippageBps / 10000); // beli lebih mahal (slippage)
     const tokens = amountNative / fillPrice;
 
-    paperAdjustBalance(this.key, -amountNative);
+    const gasFee = GAS_FEE_NATIVE[this.cfg.type] || 0;
+    paperAdjustBalance(this.key, -(amountNative + gasFee));
     paperSetHolding(this.key, tokenAddress, paperHolding(this.key, tokenAddress) + tokens);
 
     const txid = `paper-buy-${Date.now()}`;
-    log.info(`BUY [paper:${this.key}] ${tokenAddress.slice(0, 8)} ${amountNative} native → ${tokens.toFixed(2)} token`);
+    log.info(`BUY [paper:${this.key}] ${tokenAddress.slice(0, 8)} ${amountNative} + ${gasFee} gas → ${tokens.toFixed(2)} token`);
     return { txid, spentNative: amountNative, tokensRaw: tokens };
   }
 
@@ -125,11 +131,13 @@ export class PaperChain {
     const fillPrice = price * (1 - slippageBps / 10000); // jual lebih murah (slippage)
     const receivedNative = tokens * fillPrice;
 
+    const gasFee = GAS_FEE_NATIVE[this.cfg.type] || 0;
+    // Gas is already deducted from gotNative before crediting
     paperSetHolding(this.key, tokenAddress, held - tokens);
-    paperAdjustBalance(this.key, receivedNative);
+    paperAdjustBalance(this.key, receivedNative - gasFee);
 
     const txid = `paper-sell-${Date.now()}`;
-    log.info(`SELL [paper:${this.key}] ${pct}% ${tokenAddress.slice(0, 8)} → ${receivedNative.toFixed(4)} native`);
+    log.info(`SELL [paper:${this.key}] ${pct}% ${tokenAddress.slice(0, 8)} → ${receivedNative.toFixed(4)} native (gas -${gasFee})`);
     return { txid, soldRaw: tokens, receivedNative };
   }
 }
