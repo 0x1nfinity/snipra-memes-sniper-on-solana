@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { loadConfig, getConfig, watchConfig, getActiveMode } from './config.js';
 import { initDb } from './db.js';
-import { loadState, syncStateMode, openPositions, findOpen, inCooldown, addPosition, statsSummary, currentPnlPct, moonbags } from './positions/state.js';
+import { loadState, syncStateMode, openPositions, statsSummary, currentPnlPct, moonbags } from './positions/state.js';
 import { recentTrades, tradeStatsByChain } from './db.js';
 import { GENE_SPACE } from './darwin/darwin.js';
 import { Executor } from './trade/executor.js';
@@ -10,11 +10,10 @@ import { Darwin } from './darwin/darwin.js';
 import { LLM } from './llm/llm.js';
 import { Telegram } from './telegram/bot.js';
 import { runScreening } from './screener/screener.js';
-import { tokenPairs, bestPair, normalizePair } from './screener/dexscreener.js';
-import { fmtUsd, fmtPct, shortAddr, tokenLink, sleep } from './utils.js';
+import { fmtUsd, fmtPct, tokenLink, sleep } from './utils.js';
 import { chainBlocks, marketLine, communityLine, llmLine, fmtNative, chainHeader, fmtHold } from './telegram/fmt.js';
 import { createLogger } from './logger.js';
-import { effectiveMax } from './trade/helpers.js';
+import { effectiveMax, resolveCandidate, buyToken, sellToken } from './trade/helpers.js';
 
 const log = createLogger('main');
 
@@ -38,83 +37,6 @@ const llm = new LLM().load();
 let paused = false;
 let screenTimer = null;
 let screenBusy = false;
-
-// ===== BUY / SELL helpers (dipakai auto-buy & perintah telegram) =====
-
-async function resolveCandidate(chainKey, address) {
-  const cfg = getConfig();
-  const dsId = cfg.chains[chainKey]?.dexscreenerId;
-  if (!dsId) throw new Error(`chain ${chainKey} tidak dikenal/aktif`);
-  const pairs = await tokenPairs(dsId, address);
-  const pair = bestPair(pairs);
-  if (!pair) throw new Error(`token ${address} tidak ditemukan di DexScreener`);
-  return normalizePair(pair, chainKey);
-}
-
-async function buyToken(chainKey, address, amountNative, source, candidate) {
-  const cfg = getConfig();
-  if (cfg.activeChain !== 'both' && cfg.activeChain !== chainKey)
-    throw new Error(`chain ${chainKey} nonaktif (activeChain=${cfg.activeChain})`);
-  const c = candidate || (await resolveCandidate(chainKey, address));
-
-  if (findOpen(chainKey, c.address)) throw new Error(`sudah ada posisi ${c.symbol}`);
-  if (inCooldown(chainKey, c.address, cfg.trading.cooldownMinutes))
-    throw new Error(`${c.symbol} masih cooldown`);
-  // single-chain: batas efektif = maxPerChain; both: total maxPositions + per-chain
-  const effMax = effectiveMax(cfg);
-  if (openPositions().length >= effMax)
-    throw new Error(`max posisi (${effMax}) tercapai`);
-  const chainCount = openPositions().filter((p) => p.chain === chainKey).length;
-  if (chainCount >= cfg.trading.maxPerChain)
-    throw new Error(`maxPerChain ${chainKey} (${cfg.trading.maxPerChain}) tercapai`);
-
-  // sizing: SELALU ikut config.<mode>.json (chains.<key>.buyAmount) apa adanya —
-  // TIDAK lagi diskalakan LLM sizeMult/score. amount eksplisit (mis. /buy <amt>)
-  // tetap dihormati; jika kosong, executor.buy memakai buyAmount persis.
-  const amount = amountNative;
-  // sizing final + cek minSwap + floor + CEK BALANCE semua terjadi di executor.buy
-  const res = await executor.buy(chainKey, c.address, amount, { labels: c.labels });
-  const pos = addPosition({
-    chain: chainKey,
-    address: c.address,
-    symbol: c.symbol,
-    pairAddress: c.pairAddress,
-    labels: c.labels,
-    entryPrice: c.priceUsd,
-    amountNative: res.spentNative,
-    tokensRaw: res.tokensRaw,
-    txid: res.txid,
-    genomeId: c.genomeId || null,
-    llmVerdict: c.llmVerdict || null,
-  });
-  log.info(`posisi dibuka [${source}]: ${c.symbol} @ ${c.priceUsd}`);
-  return { ...pos, txid: res.txid };
-}
-
-async function sellToken(address, pct) {
-  const { recordPartialSell, closePosition, findMoonbag, removeMoonbag } = await import('./positions/state.js');
-  const pos = openPositions().find(
-    (p) => p.address.toLowerCase() === address.toLowerCase()
-  );
-  if (pos) {
-    const res = await executor.sell(pos.chain, pos.address, pct, { labels: pos.labels, fallbackPriceUsd: pos.currentPrice });
-    if (pct >= 100) {
-      const trade = closePosition(pos, { reason: 'manual sell', receivedNative: res.receivedNative, txid: res.txid });
-      onTradeClosed(trade);
-    } else {
-      recordPartialSell(pos, { pctOfRemaining: pct, receivedNative: res.receivedNative, txid: res.txid });
-    }
-    return res;
-  }
-  // bukan posisi aktif — cek moonbag
-  const mb = findMoonbag(address);
-  if (!mb) throw new Error(`tidak ada posisi/moonbag utk ${shortAddr(address)}`);
-  const res = await executor.sell(mb.chain, mb.address, pct, { labels: mb.labels, fallbackPriceUsd: mb.currentPrice });
-  if (pct >= 100) removeMoonbag(mb.id);
-  else mb.moonPct = mb.moonPct * (1 - pct / 100);
-  log.info(`moonbag sell ${pct}% ${mb.symbol} → ${res.receivedNative?.toFixed(6)} native`);
-  return res;
-}
 
 // ===== feedback loop: trade close → darwin fitness + LLM lesson =====
 
@@ -328,11 +250,11 @@ async function runLlmTool(name, args) {
     case 'buy_token': {
       const chain = args.chain || inferChain(args.address);
       if (!chain) return { error: 'chain tidak diketahui' };
-      const pos = await buyToken(chain, args.address, args.amount, 'llm-tool');
+      const pos = await buyToken(chain, args.address, args.amount, 'llm-tool', null, executor, onTradeClosed);
       return { ok: true, symbol: pos.symbol, chain, entryPrice: pos.entryPrice, tx: pos.txid };
     }
     case 'sell_token': {
-      const res = await sellToken(args.address, args.pct ?? 100);
+      const res = await sellToken(args.address, args.pct ?? 100, executor, onTradeClosed);
       return { ok: true, receivedNative: res.receivedNative, tx: res.txid };
     }
     case 'close_all_positions': {
@@ -356,8 +278,8 @@ const telegram = new Telegram({
   executor,
   darwin,
   llm,
-  buyToken,
-  sellToken,
+  buyToken: (chain, addr, amt) => buyToken(chain, addr, amt, 'telegram-button', null, executor, onTradeClosed),
+  sellToken: (addr, pct) => sellToken(addr, pct, executor, onTradeClosed),
   screenNow: () => screeningCycle(true), // screening + langsung buy yang lolos
   runEvolve,
   llmChat: (text) => llm.chat(
@@ -388,7 +310,7 @@ async function screeningCycle(force = false) {
     for (const c of candidates) {
       c.genomeId = genomeId;
       try {
-        const pos = await buyToken(c.chain, c.address, undefined, 'screener', c);
+        const pos = await buyToken(c.chain, c.address, undefined, 'screener', c, executor, onTradeClosed);
         bought.push({ c, pos });
       } catch (e) {
         log.debug(`skip buy ${c.symbol}: ${e.message}`);
