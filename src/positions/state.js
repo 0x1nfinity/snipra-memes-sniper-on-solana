@@ -223,8 +223,8 @@ export function statsSummary() {
 
 /**
  * Nolkan akumulator statistik + riwayat close in-memory (dipakai /paperreset).
- * Catatan: state.stats/closed bersifat global (tidak per-mode); reset ini
- * mengembalikan realized PnL yang tampil di /stats ke 0. Riwayat DB dihapus
+ * State sudah per-mode (positions.paper.json vs positions.live.json) jadi
+ * reset hanya mempengaruhi mode yang sedang aktif. Riwayat DB dihapus
  * terpisah per-mode via deleteTrades('paper').
  */
 export function resetStats() {
