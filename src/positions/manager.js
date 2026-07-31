@@ -5,7 +5,6 @@ import {
   moonbags, moveToMoonbag, updateMoonbagPrice,
 } from './state.js';
 import { fmtPct, fmtUsd, tokenLink } from '../utils.js';
-import { fmtHold, nativeSym } from '../telegram/fmt.js';
 import { createLogger } from '../logger.js';
 
 const log = createLogger('positions');
@@ -28,6 +27,32 @@ export class PositionManager {
     this.stop();
     this._timer = setInterval(() => this.tick().catch((e) => log.error('tick error:', e.message)), intervalSec * 1000);
     log.info(`position monitor start (interval ${intervalSec}s)`);
+    // Safety net: deteksi posisi yg on-chain balance-nya sudah 0 (swap manual di luar bot, dll).
+    // Hanya dijalankan SEKALI saat startup — tidak setiap tick — agar tidak membebani RPC.
+    this._startupSafetyCheck().catch((e) => log.warn('startup safety check gagal:', e.message));
+  }
+
+  async _startupSafetyCheck() {
+    const positions = openPositions();
+    if (positions.length === 0) return;
+    log.info(`startup safety check: memeriksa ${positions.length} posisi...`);
+    for (const pos of positions) {
+      try {
+        const chain = this.executor.chain(pos.chain);
+        const bal = await chain.tokenBalance(pos.address);
+        const rawNum = typeof bal.raw === 'bigint' ? Number(bal.raw) : Number(bal.raw);
+        if (rawNum <= 0 && pos.remainingPct > 0) {
+          log.warn(`${pos.symbol}: on-chain balance 0 tapi posisi masih terbuka — auto-close (startup safety net)`);
+          const trade = closePosition(pos, { reason: 'auto-close: on-chain balance 0 (startup)', receivedNative: 0, txid: pos.lastSellTx || '' });
+          this.notify(
+            `⚠️ *AUTO-CLOSE (startup)*\n${this._link(pos)} · balance on-chain = 0\nPosisi ditutup otomatis — token mungkin sudah dijual di luar bot.`
+          );
+          this.onTradeClosed(trade);
+        }
+      } catch (e) {
+        log.debug(`startup balance check ${pos.symbol} dilewati: ${e.message}`);
+      }
+    }
   }
 
   stop() {
@@ -67,7 +92,15 @@ export class PositionManager {
       if (!dsId) continue;
       try {
         const addrs = [...new Set([...list, ...moon].map((p) => p.address))];
-        const pairs = await tokensBatch(dsId, addrs);
+        // Retry sekali jika DexScreener gagal (rate limit / transient error)
+        let pairs;
+        try {
+          pairs = await tokensBatch(dsId, addrs);
+        } catch (e) {
+          log.warn(`refresh harga ${chainKey} attempt 1 gagal: ${e.message}, retry…`);
+          await new Promise((r) => setTimeout(r, 2000));
+          pairs = await tokensBatch(dsId, addrs);
+        }
         const priceOf = (p) => {
           const mine = pairs
             .filter((x) => x?.baseToken?.address?.toLowerCase() === p.address.toLowerCase())
@@ -76,9 +109,18 @@ export class PositionManager {
           return { price: Number(pair?.priceUsd), liqUsd: Number(pair?.liquidity?.usd) || 0 };
         };
         const minLiq = cfg.trading.priceMinLiquidityUsd ?? 0;
+        const now = Date.now();
+        const staleMs = (cfg.monitor.stalePriceWarnSec ?? 600) * 1000;
         for (const p of list) {
           const { price, liqUsd } = priceOf(p);
-          if (!(price > 0)) { p._tickDropPct = 0; continue; }
+          if (!(price > 0)) {
+            p._tickDropPct = 0;
+            // Peringatkan jika harga stale >stalePriceWarnSec (token mungkin delisted/rug)
+            if (now - p.lastPriceAt > staleMs && p.lastPriceAt > 0) {
+              log.warn(`${p.symbol}: harga tidak tersedia selama ${Math.round((now - p.lastPriceAt) / 1000)}s — token mungkin delisted`);
+            }
+            continue;
+          }
           // Sanity: pembacaan dari pair likuiditas ~0 tidak dipercaya (glitch harga)
           if (liqUsd > 0 && liqUsd < minLiq) {
             log.warn(`${p.symbol}: harga $${price} diabaikan (likuiditas $${liqUsd.toFixed(0)} < $${minLiq})`);
@@ -104,7 +146,7 @@ export class PositionManager {
           updateMoonbagPrice(m, price);
         }
       } catch (e) {
-        log.warn(`refresh harga ${chainKey} gagal:`, e.message);
+        log.warn(`refresh harga ${chainKey} gagal (setelah retry):`, e.message);
       }
     }
   }
@@ -123,9 +165,7 @@ export class PositionManager {
           if (sudden && !pos._slPending) {
             pos._slPending = { pnl, at: Date.now() };
             this.notify(
-              `⚠️ *SL tertunda — konfirmasi* · ${this._link(pos)} (${pos.chain})\n` +
-              `PnL *${fmtPct(pnl)}* (turun ${(pos._tickDropPct).toFixed(0)}% dalam 1 tick)\n` +
-              `Dicek ulang tick berikutnya — bisa jadi glitch / flash dump, bukan dump nyata.`
+              `⚠️ *STOP LOSS — TERTUNDA*\n${this._link(pos)} · PnL ${fmtPct(pnl)} (turun ${(pos._tickDropPct).toFixed(0)}% dalam 1 tick)\nDicek ulang tick berikutnya.`
             );
             continue;
           }
@@ -136,8 +176,7 @@ export class PositionManager {
         // Harga pulih di atas SL padahal tadi sempat pending → glitch/flash terkonfirmasi
         if (pos._slPending) {
           this.notify(
-            `✅ *SL dibatalkan* · ${this._link(pos)} (${pos.chain})\n` +
-            `Harga pulih → PnL *${fmtPct(pnl)}*. Kemungkinan glitch / flash dump, bukan dump nyata.`
+            `✅ *STOP LOSS — DIBATALKAN*\n${this._link(pos)} · PnL pulih ke ${fmtPct(pnl)} (glitch/flash dump).`
           );
           pos._slPending = null;
         }
@@ -157,11 +196,7 @@ export class PositionManager {
             txid: res.txid,
           });
           this.notify(
-            `🎯 *TP${i + 1}* · ${this._link(pos)} (${pos.chain})\n` +
-            `PnL *${fmtPct(pnl)}* · hold ${fmtHold(pos.openedAt)}\n` +
-            `Jual ${tier.sellPct}% sisa → ${res.receivedNative?.toFixed(4)} ${nativeSym(pos.chain)}\n` +
-            `Sisa posisi ${pos.remainingPct.toFixed(1)}% · ${(await this._balanceLine(pos.chain)) || ''}\n` +
-            `tx: \`${res.txid}\``
+            `🎯 *TAKE PROFIT — TIER ${i + 1}*\n${this._link(pos)} · PnL ${fmtPct(pnl)} · jual ${tier.sellPct}%\nSisa posisi ${pos.remainingPct.toFixed(1)}%\ntx: \`${res.txid}\``
           );
           laddered = true;
           if (isLastTier || pos.remainingPct < 1) {
@@ -184,8 +219,7 @@ export class PositionManager {
           if (!pos.trailingActive && (postTp || peakGain >= tr.activateGainPct)) {
             pos.trailingActive = true;
             this.notify(
-              `📈 *Trailing aktif* · ${this._link(pos)} (${pos.chain})\n` +
-              `peak ${fmtPct(peakGain)} · trail ${tr.trailPct}%${postTp ? ' · fase post-TP' : ''}`
+              `📈 *TRAILING — AKTIF*\n${this._link(pos)} · peak ${fmtPct(peakGain)} · trail ${tr.trailPct}%${postTp ? ' (post-TP)' : ''}`
             );
           }
           if (pos.trailingActive) {
@@ -241,12 +275,7 @@ export class PositionManager {
     const pnl = currentPnlPct(pos);
     const trade = moveToMoonbag(pos, { reason: `${reason} → moonbag ${moonbagPct}%`, receivedNative: 0, txid: res.txid });
     this.notify(
-      `🌙 *MOONBAG* · ${this._link(pos)} (${pos.chain})\n` +
-      `PnL *${fmtPct(pnl)}* · hold ${fmtHold(pos.openedAt)}\n` +
-      `Jual ${sellPctOfRemaining.toFixed(1)}% sisa → ${res.receivedNative?.toFixed(4)} ${nativeSym(pos.chain)}\n` +
-      `${moonbagPct}% posisi awal di-hold jangka panjang\n` +
-      `${(await this._balanceLine(pos.chain)) || ''}\n` +
-      `tx: \`${res.txid}\``
+      `🌙 *MOONBAG*\n${this._link(pos)} · PnL ${fmtPct(pnl)} · ${moonbagPct}% posisi awal di-hold\nJual ${sellPctOfRemaining.toFixed(1)}% sisa\ntx: \`${res.txid}\``
     );
     this.onTradeClosed(trade);
     return trade;
@@ -266,24 +295,10 @@ export class PositionManager {
     return tokenLink(pos.symbol, slug, pos.address);
   }
 
-  /** baris saldo native terkini chain posisi, utk ditempel di notif setelah sell */
-  async _balanceLine(chainKey) {
-    try {
-      const bal = await this.executor.chain(chainKey).nativeBalance();
-      return `💼 Saldo ${bal.toFixed(4)} ${nativeSym(chainKey)}`;
-    } catch {
-      return null;
-    }
-  }
-
   async _notifyClosed(pos, pnl, reason, txid) {
     const emoji = pnl >= 0 ? '✅' : '🔻';
-    const balLine = await this._balanceLine(pos.chain);
     this.notify(
-      `${emoji} *CLOSE* · ${this._link(pos)} (${pos.chain})\n` +
-      `PnL *${fmtPct(pnl)}* · hold ${fmtHold(pos.openedAt)}\n` +
-      `${fmtUsd(pos.entryPrice)} → ${fmtUsd(pos.currentPrice)}\n` +
-      `📝 ${reason}${balLine ? `\n${balLine}` : ''}${txid ? `\ntx: \`${txid}\`` : ''}`
+      `${emoji} *CLOSE* · ${this._link(pos)}\nPnL ${fmtPct(pnl)} · ${fmtUsd(pos.entryPrice)} → ${fmtUsd(pos.currentPrice)}\n${reason}${txid ? `\ntx: \`${txid}\`` : ''}`
     );
   }
 }

@@ -195,8 +195,14 @@ export class EvmChain {
       await this._ensureApproval(tokenAddress, this.cfg.v2Router, raw);
     }
 
-    // Capture balance AFTER approval (so approval gas doesn't leak into receivedNative)
-    const ethBefore = await this.provider.getBalance(this.wallet.address);
+    // Capture balance AFTER approval (so approval gas doesn't leak into receivedNative).
+    // Best-effort: jika query saldo gagal, fallback ke quote.
+    let ethBefore = 0n;
+    try {
+      ethBefore = await this.provider.getBalance(this.wallet.address);
+    } catch (e) {
+      log.warn(`[${this.key}] gagal baca saldo ETH sebelum swap: ${e.message}`);
+    }
 
     let tx;
     if (route.kind === 'v3') {
@@ -217,10 +223,19 @@ export class EvmChain {
     const receipt = await tx.wait();
     if (receipt.status !== 1) throw new Error(`sell tx revert: ${tx.hash}`);
 
-    // Compute actual ETH received (balance delta), accounting for gas spent
-    const ethAfter = await this.provider.getBalance(this.wallet.address);
-    const gasUsed = receipt.gasUsed * receipt.gasPrice;  // ethers v6: gasUsed and gasPrice are bigints
-    const receivedNative = Number(ethers.formatEther(ethAfter - ethBefore + gasUsed));
+    // Compute actual ETH received (balance delta), accounting for gas spent.
+    // ⚠️ Swap SUDAH sukses di titik ini — jangan pernah throw.
+    // Jika query saldo setelah swap gagal (RPC down/timeout), fallback ke quote.
+    let receivedNative;
+    try {
+      const ethAfter = await this.provider.getBalance(this.wallet.address);
+      const gasUsed = receipt.gasUsed * receipt.gasPrice;  // ethers v6: gasUsed and gasPrice are bigints
+      receivedNative = Number(ethers.formatEther(ethAfter - ethBefore + gasUsed));
+    } catch (e) {
+      // Fallback: pakai quote outAmount (tanpa koreksi gas — estimasi terbaik)
+      receivedNative = Number(ethers.formatEther(route.out));
+      log.warn(`[${this.key}] gagal baca saldo ETH setelah swap, fallback ke quote: ${receivedNative.toFixed(6)} ETH (${e.message})`);
+    }
 
     log.info(`SELL [${this.key}] ${pct}% ${tokenAddress.slice(0, 8)} via ${route.kind} tx ${tx.hash} → ${receivedNative.toFixed(6)} ETH`);
     return { txid: tx.hash, soldRaw: raw, receivedNative };

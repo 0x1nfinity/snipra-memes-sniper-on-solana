@@ -128,6 +128,11 @@ export const DEFAULTS = {
     // Abaikan pembacaan harga dari pair dengan likuiditas < nilai ini (USD).
     // Pair likuiditas ~0 sering memberi harga sampah (sumber utama glitch).
     priceMinLiquidityUsd: 300,
+    // Abaikan update harga jika lonjakan melebihi sekian % dalam satu tick (anti-glitch).
+    // 0 = nonaktif, default 500% (6x). Untuk token meme baru bisa diset lebih tinggi.
+    priceAnomalySpikePct: 500,
+    // Biaya gas untuk paper mode (estimasi per swap)
+    paperGas: { solana: 0.000005, evm: 0.0001 },
   },
   tpLadder: [
     // gainPct = target profit %, sellPct = % dari sisa posisi yang dijual
@@ -147,6 +152,10 @@ export const DEFAULTS = {
   },
   monitor: {
     intervalSec: 20,
+    // Peringatkan di log jika harga posisi tidak tersedia selama > N detik.
+    // Token yang delisted/rug tidak akan punya harga DexScreener; posisi
+    // dengan harga stale > threshold ini mungkin perlu pengecekan manual.
+    stalePriceWarnSec: 600,
   },
   darwin: {
     enabled: true,
@@ -163,6 +172,7 @@ export const DEFAULTS = {
     // LLM = GATE buy/skip, BUKAN sizer: ukuran posisi selalu = chains.<key>.buyAmount.
     gateBuy: true, // LLM ikut menilai sebelum buy (false = langsung buy semua yang lolos filter)
     minConfidence: 0.35, // action=buy tapi confidence di bawah ini → tetap ditolak
+    failOpen: true, // true = LLM error → token lolos; false = LLM error → token ditolak
     maxLessons: 12, // jumlah lesson terakhir yang diinject ke prompt
     tools: true, // izinkan LLM memanggil tool (screen/buy/sell/positions) di chat
   },
