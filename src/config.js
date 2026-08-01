@@ -106,6 +106,10 @@ export const DEFAULTS = {
     maxPositions: 20,
     minSwapUsd: 5, // tolak swap bernilai di bawah ini (buy & sizing)
     cooldownMinutes: 240, // jangan re-buy token yang sama dalam window ini
+    // Token boleh di-close & di-rebuy sampai N kali dalam window cooldownMinutes
+    // sebelum cooldown betul-betul memblokir; hitungan reset begitu window lewat
+    // tanpa trade baru. 1 = perilaku lama (langsung cooldown setelah 1x close).
+    maxTradesBeforeCooldown: 5,
     stopLossPct: -35,
     // ===== proteksi anti-glitch / flash-dump untuk STOP LOSS =====
     // Jika PnL menembus SL SEKALIGUS dengan penurunan mendadak >= slFlashDropPct

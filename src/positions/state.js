@@ -103,9 +103,27 @@ export function findOpen(chain, address) {
   return state.open.find((p) => p.chain === chain && p.address === address);
 }
 
-export function inCooldown(chain, address, cooldownMinutes) {
-  const t = state.cooldowns[`${chain}:${address}`];
-  return t != null && Date.now() - t < cooldownMinutes * 60000;
+/** Normalisasi entry cooldown lama (angka timestamp) ke bentuk {count, lastCloseAt}. */
+function cooldownEntry(raw) {
+  if (raw == null) return null;
+  return typeof raw === 'number' ? { count: 1, lastCloseAt: raw } : raw;
+}
+
+export function inCooldown(chain, address, cooldownMinutes, maxTradesBeforeCooldown = 1) {
+  const entry = cooldownEntry(state.cooldowns[`${chain}:${address}`]);
+  if (!entry) return false;
+  if (Date.now() - entry.lastCloseAt >= cooldownMinutes * 60000) return false; // window sudah lewat
+  return entry.count >= maxTradesBeforeCooldown;
+}
+
+/** Catat satu close token: naikkan hitungan re-buy jika masih dalam window cooldown
+ *  sebelumnya, atau mulai hitungan baru dari 1 jika window sudah lewat. */
+function recordCooldown(chain, address, cooldownMinutes) {
+  const key = `${chain}:${address}`;
+  const prev = cooldownEntry(state.cooldowns[key]);
+  const now = Date.now();
+  const stillInWindow = prev && now - prev.lastCloseAt < cooldownMinutes * 60000;
+  state.cooldowns[key] = { count: stillInWindow ? prev.count + 1 : 1, lastCloseAt: now };
 }
 
 export function addPosition({ chain, address, symbol, pairAddress, labels, entryPrice, amountNative, tokensRaw, txid, genomeId, llmVerdict }) {
@@ -185,7 +203,7 @@ export function closePosition(pos, { reason, receivedNative, txid }) {
   state.open = state.open.filter((p) => p.id !== pos.id);
   state.closed.push(trade);
   if (state.closed.length > 500) state.closed = state.closed.slice(-500);
-  state.cooldowns[`${pos.chain}:${pos.address}`] = Date.now();
+  recordCooldown(pos.chain, pos.address, getConfig().trading.cooldownMinutes);
 
   state.stats.totalTrades += 1;
   if (pnl >= 0) state.stats.wins += 1;

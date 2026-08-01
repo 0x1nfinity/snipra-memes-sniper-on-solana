@@ -12,6 +12,7 @@ const MENU_NUM = {
   bs: { group: 'main', path: 'trading.buyAmount', step: 0.05, min: 0.05, max: 50, label: '💰 Buy SOL', fmt: (v) => `${+v.toFixed(3)}` },
   sl: { group: 'main', path: 'trading.stopLossPct', step: 5, min: -90, max: -5, label: '🛑 SL', fmt: (v) => `${v}%` },
   cd: { group: 'main', path: 'trading.cooldownMinutes', step: 30, min: 0, max: 1440, label: '⏳ Cooldown', fmt: (v) => `${v}m` },
+  cn: { group: 'main', path: 'trading.maxTradesBeforeCooldown', step: 1, min: 1, max: 20, label: '🔁 Cooldown after', fmt: (v) => `${v}x` },
   ta: { group: 'main', path: 'trailing.activateGainPct', step: 5, min: 5, max: 500, label: '📈 Trail↑', fmt: (v) => `${v}%` },
   tp: { group: 'main', path: 'trailing.trailPct', step: 1, min: 1, max: 50, label: '📉 Trail↓', fmt: (v) => `${v}%` },
   // ── filter / hard filter screening ──

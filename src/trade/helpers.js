@@ -30,7 +30,7 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
   const c = candidate || (await resolveCandidate(chainKey, address));
 
   if (findOpen(chainKey, c.address)) throw new Error(`sudah ada posisi ${c.symbol}`);
-  if (inCooldown(chainKey, c.address, cfg.trading.cooldownMinutes))
+  if (inCooldown(chainKey, c.address, cfg.trading.cooldownMinutes, cfg.trading.maxTradesBeforeCooldown))
     throw new Error(`${c.symbol} masih cooldown`);
   const effMax = effectiveMax(cfg);
   if (openPositions().length >= effMax)
