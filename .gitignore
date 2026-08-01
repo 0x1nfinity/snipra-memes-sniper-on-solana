@@ -31,9 +31,14 @@ pm2.log
 # Claude Code
 .claude/
 
-# Config lama (dimigrasi ke config.paper.json + config.live.json)
+# Local strategy config — personal trading params, not for the repo.
+# Copy config.live.example.json / config.paper.example.json to get started;
+# the bot also auto-creates these with defaults on first run.
+config.live.json
+config.paper.json
+# Old config (migrated to config.paper.json + config.live.json)
 config.json
-# Backup migrasi
+# Migration backup
 config.json.migrated-*.bak
-# Mode marker (ditentukan runtime)
+# Mode marker (determined at runtime)
 data/.mode
