@@ -285,6 +285,22 @@ async function screeningCycle(force = false) {
           lines.push(`   ${marketLine(c)}, ${communityLine(c)}`);
           lines.push('');
         }
+        if (bought.length > 0) {
+          const chainsBought = [...new Set(bought.map((b) => b.c.chain))];
+          const saldoLines = await Promise.all(chainsBought.map(async (ck) => {
+            try {
+              const bal = await executor.chain(ck).nativeBalance();
+              return `${bal.toFixed(4)} SOL`;
+            } catch {
+              return null;
+            }
+          }));
+          const shown = saldoLines.filter(Boolean);
+          if (shown.length) {
+            lines.push(`Saldo tersisa: ${shown.join(' · ')}`);
+            lines.push('');
+          }
+        }
         for (const { c, reason } of rejected) {
           const slug = cfg.chains[c.chain]?.gmgnSlug;
           lines.push(`❌ Tolak ${tokenLink(c.symbol, slug, c.address)} — ${fmtUsd(c.priceUsd)}`);

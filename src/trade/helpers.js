@@ -70,7 +70,7 @@ export async function sellToken(address, pct, executor, onTradeClosed) {
     } else {
       recordPartialSell(pos, { pctOfRemaining: pct, receivedNative: res.receivedNative, txid: res.txid });
     }
-    return res;
+    return { ...res, chain: pos.chain };
   }
   const mb = findMoonbag(address);
   if (!mb) throw new Error(`tidak ada posisi/moonbag utk ${shortAddr(address)}`);
@@ -78,5 +78,5 @@ export async function sellToken(address, pct, executor, onTradeClosed) {
   if (pct >= 100) removeMoonbag(mb.id);
   else mb.moonPct = mb.moonPct * (1 - pct / 100);
   log.info(`moonbag sell ${pct}% ${mb.symbol} → ${res.receivedNative?.toFixed(6)} native`);
-  return res;
+  return { ...res, chain: mb.chain };
 }

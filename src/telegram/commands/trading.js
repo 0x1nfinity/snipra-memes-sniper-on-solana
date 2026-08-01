@@ -6,8 +6,10 @@ export async function buy(args, msg, deps) {
   if (args.length < 2) return deps.send('Usage: /buy <chain> <address> [amount]');
   const [chain, address, amount] = args;
   const pos = await deps.buyToken(chain, address, amount ? Number(amount) : undefined, 'manual');
+  const saldo = await deps.executor.chain(chain).nativeBalance().catch(() => null);
   return deps.send(
-    `✅ BUY ${tokenLink(pos.symbol, deps.chainSlug(chain), pos.address)} @ ${fmtUsd(pos.entryPrice)}\ntx: \`${pos.txid}\``
+    `✅ BUY ${tokenLink(pos.symbol, deps.chainSlug(chain), pos.address)} @ ${fmtUsd(pos.entryPrice)}` +
+    (saldo != null ? `\nSaldo: ${saldo.toFixed(4)} SOL` : '')
   );
 }
 
@@ -15,7 +17,11 @@ export async function sell(args, msg, deps) {
   if (!args[0]) return deps.send('Usage: /sell <address> [pct]');
   const pct = args[1] ? Number(args[1]) : 100;
   const res = await deps.sellToken(args[0], pct);
-  return deps.send(`✅ SELL ${pct}% ${shortAddr(args[0])}\ntx: \`${res.txid}\``);
+  const saldo = res.chain ? await deps.executor.chain(res.chain).nativeBalance().catch(() => null) : null;
+  return deps.send(
+    `✅ SELL ${pct}% ${shortAddr(args[0])}` +
+    (saldo != null ? `\nSaldo: ${saldo.toFixed(4)} SOL` : '')
+  );
 }
 
 export async function closeall(args, msg, deps) {

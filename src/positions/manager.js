@@ -62,8 +62,9 @@ export class PositionManager {
       if (rawNum <= 0 && pos.remainingPct > 0) {
         log.warn(`${pos.symbol}: on-chain balance 0 tapi posisi masih terbuka — auto-close (reconcile)`);
         const trade = closePosition(pos, { reason: 'auto-close: on-chain balance 0 (reconcile)', receivedNative: 0, txid: pos.lastSellTx || '' });
+        const saldo = await this._saldo(pos.chain);
         this.notify(
-          `⚠️ Auto-close\n\n${this._link(pos)} — balance on-chain = 0, posisi ditutup otomatis (kemungkinan sudah dijual di luar bot)`
+          `⚠️ Auto-close\n\n${this._link(pos)} — balance on-chain = 0, kemungkinan sudah dijual di luar bot\nSaldo: ${saldo}`
         );
         this.onTradeClosed(trade);
       }
@@ -214,7 +215,7 @@ export class PositionManager {
             txid: res.txid,
           });
           this.notify(
-            `🎯 Take Profit — Tier ${i + 1}\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}, jual ${tier.sellPct}%\nSisa posisi: ${pos.remainingPct.toFixed(1)}%\n\ntx: \`${res.txid}\``
+            `🎯 Take Profit — Tier ${i + 1}\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}, jual ${tier.sellPct}%\nSisa posisi: ${pos.remainingPct.toFixed(1)}%`
           );
           laddered = true;
           if (isLastTier || pos.remainingPct < 1) {
@@ -292,8 +293,9 @@ export class PositionManager {
     recordPartialSell(pos, { pctOfRemaining: sellPctOfRemaining, receivedNative: res.receivedNative, txid: res.txid });
     const pnl = currentPnlPct(pos);
     const trade = moveToMoonbag(pos, { reason: `${reason} → moonbag ${moonbagPct}%`, receivedNative: 0, txid: res.txid });
+    const saldo = await this._saldo(pos.chain);
     this.notify(
-      `🌙 Moonbag\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}\n${moonbagPct}% posisi awal di-hold, jual ${sellPctOfRemaining.toFixed(1)}% sisa\n\ntx: \`${res.txid}\``
+      `🌙 Moonbag\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}\n${moonbagPct}% posisi awal di-hold, jual ${sellPctOfRemaining.toFixed(1)}% sisa\nSaldo: ${saldo}`
     );
     this.onTradeClosed(trade);
     return trade;
@@ -303,7 +305,7 @@ export class PositionManager {
     const res = await this.executor.sell(pos.chain, pos.address, 100, { labels: pos.labels, fallbackPriceUsd: pos.currentPrice });
     const pnl = currentPnlPct(pos);
     const trade = closePosition(pos, { reason, receivedNative: res.receivedNative, txid: res.txid });
-    await this._notifyClosed(pos, pnl, reason, res.txid);
+    await this._notifyClosed(pos, pnl, reason);
     this.onTradeClosed(trade);
     return trade;
   }
@@ -313,10 +315,21 @@ export class PositionManager {
     return tokenLink(pos.symbol, slug, pos.address);
   }
 
-  async _notifyClosed(pos, pnl, reason, txid) {
+  /** saldo native chain saat ini, dipakai di notif setelah close/buy — gagal → '—' (jangan block notif) */
+  async _saldo(chainKey) {
+    try {
+      const bal = await this.executor.chain(chainKey).nativeBalance();
+      return `${bal.toFixed(4)} SOL`;
+    } catch {
+      return '—';
+    }
+  }
+
+  async _notifyClosed(pos, pnl, reason) {
     const emoji = pnl >= 0 ? '✅' : '🔻';
+    const saldo = await this._saldo(pos.chain);
     this.notify(
-      `${emoji} Closed\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}\n${fmtUsd(pos.entryPrice)} → ${fmtUsd(pos.currentPrice)} · ${reason}${txid ? `\n\ntx: \`${txid}\`` : ''}`
+      `${emoji} Closed\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}\n${fmtUsd(pos.entryPrice)} → ${fmtUsd(pos.currentPrice)} · ${reason}\nSaldo: ${saldo}`
     );
   }
 }
