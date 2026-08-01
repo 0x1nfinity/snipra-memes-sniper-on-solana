@@ -1,7 +1,7 @@
 # snipra v2 — Solana Meme Sniper
 
-Bot automation memecoin untuk **Solana**. (Versi Robinhood Chain/EVM sudah diekstrak ke
-proyek terpisah — lihat `robinhood/` sebelum dipindahkan keluar dari root ini.)
+Bot automation memecoin untuk **Solana**. (Versi Robinhood Chain/EVM sudah diekstrak
+ke proyek terpisah.)
 
 ## Mode: paper vs live
 
