@@ -1,6 +1,6 @@
 {
   "screener": {
-    "maxCandidatesPerCycle": 10,
+    "maxCandidatesPerCycle": 30,
     "sources": {
       "tokenProfiles": true,
       "boostsLatest": true,
@@ -9,7 +9,7 @@
     "filters": {
       "minVolume24hUsd": 10000,
       "minAgeHours": 2,
-      "maxAgeHours": 168,
+      "maxAgeHours": 96,
       "minLiquidityUsd": 15000,
       "minMarketCapUsd": 10000,
       "maxMarketCapUsd": 5000000,
@@ -20,7 +20,7 @@
       "minVolLiqRatio": 0.5,
       "requireSocials": false,
       "blockHoneypot": true,
-      "maxTop10Pct": 70,
+      "maxTop10Pct": 60,
       "strictSecurity": false
     },
     "entryGuard": {
@@ -32,10 +32,10 @@
     }
   },
   "trading": {
-    "buyAmount": 0.04,
+    "buyAmount": 0.07,
     "slippageBps": 50,
-    "maxPositions": 1,
-    "minSwapUsd": 1,
+    "maxPositions": 3,
+    "minSwapUsd": 0.3,
     "cooldownMinutes": 240,
     "stopLossPct": -20,
     "slFlashDropPct": 40,
@@ -50,8 +50,8 @@
   ],
   "trailing": {
     "enabled": true,
-    "activateGainPct": 5,
-    "trailPct": 3,
+    "activateGainPct": 10,
+    "trailPct": 5,
     "moonbagPct": 10
   },
   "monitor": {
