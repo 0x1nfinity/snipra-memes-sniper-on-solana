@@ -55,7 +55,7 @@ export async function solanaSecurity(address) {
       raw: d,
     });
   } catch (e) {
-    log.warn(`solanaSecurity ${address} gagal:`, e.message);
+    log.warn(`solanaSecurity ${address} failed:`, e.message);
     return null;
   }
 }

@@ -40,10 +40,10 @@ export function loadState() {
       state = { ...state, ...JSON.parse(fs.readFileSync(file, 'utf8')) };
       log.info(`state[${loadedMode}] loaded: ${state.open.length} open, ${state.closed.length} closed`);
     } catch (e) {
-      log.error(`${path.basename(file)} rusak:`, e.message);
+      log.error(`${path.basename(file)} corrupted:`, e.message);
     }
   } else {
-    log.info(`state[${loadedMode}] baru — ${path.basename(file)} belum ada`);
+    log.info(`state[${loadedMode}] new — ${path.basename(file)} doesn't exist yet`);
   }
   return state;
 }
@@ -55,7 +55,7 @@ export function loadState() {
  */
 export function syncStateMode() {
   if (getActiveMode() === loadedMode) return false;
-  log.info(`mode berubah ${loadedMode} → ${getActiveMode()}: reload state dari file mode baru`);
+  log.info(`mode changed ${loadedMode} → ${getActiveMode()}: reloading state from new mode file`);
   loadState();
   return true;
 }
@@ -158,7 +158,7 @@ export function updatePrice(pos, price) {
   // Guard harga anomali: lonjakan >spikePct% dalam satu tick kemungkinan data rusak
   const spikePct = getConfig().trading.priceAnomalySpikePct ?? 500;
   if (spikePct > 0 && pos.currentPrice > 0 && price > pos.currentPrice * (1 + spikePct / 100)) {
-    log.warn(`${pos.symbol}: harga anomali ${price} (prev ${pos.currentPrice}, spike ${spikePct}%), skip tick`);
+    log.warn(`${pos.symbol}: anomalous price ${price} (prev ${pos.currentPrice}, spike ${spikePct}%), skipping tick`);
     return false;
   }
   pos.currentPrice = price;
@@ -215,7 +215,7 @@ export function closePosition(pos, { reason, receivedNative, txid }) {
   try {
     recordTradeDb(trade, getActiveMode());
   } catch (e) {
-    log.error('recordTradeDb gagal:', e.message);
+    log.error('recordTradeDb failed:', e.message);
   }
   return trade;
 }

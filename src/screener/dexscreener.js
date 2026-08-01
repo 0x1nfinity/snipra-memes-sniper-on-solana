@@ -134,7 +134,7 @@ export async function discover(chainMap, sources) {
     }
   }
   const tokens = [...found.values()];
-  log.info(`discovery: ${tokens.length} token unik ditemukan`);
+  log.info(`discovery: ${tokens.length} unique tokens found`);
 
   // Resolve tiap token → pair terlikuid → normalize
   const candidates = await mapLimit(tokens, 4, async (t) => {

@@ -57,7 +57,7 @@ export class Telegram {
   start() {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     if (!token) {
-      log.warn('TELEGRAM_BOT_TOKEN kosong — telegram nonaktif');
+      log.warn('TELEGRAM_BOT_TOKEN empty — telegram disabled');
       return;
     }
     this.bot = new TelegramBot(token, { polling: true });
@@ -73,9 +73,9 @@ export class Telegram {
     // inject daftar command ke menu Telegram — tanpa BotFather
     this.bot
       .setMyCommands(COMMANDS)
-      .then(() => log.info(`${COMMANDS.length} command terdaftar ke menu telegram`))
-      .catch((e) => log.warn('setMyCommands gagal:', e.message));
-    log.info('telegram bot polling dimulai');
+      .then(() => log.info(`${COMMANDS.length} commands registered to telegram menu`))
+      .catch((e) => log.warn('setMyCommands failed:', e.message));
+    log.info('telegram bot polling started');
     const cfg = getConfig();
     const chains = Object.entries(cfg.chains).filter(([, c]) => c.enabled).map(([k]) => k).join(', ');
     this.notify(`snipra online\n\nChain: ${chains}\nType /help for the command list.`);
@@ -109,7 +109,7 @@ export class Telegram {
           try {
             await this.bot.sendMessage(this.chatId, chunk, { disable_web_page_preview: true });
           } catch (e2) {
-            log.warn(`kirim telegram gagal (fallback plain-text juga gagal): ${e2.message}`);
+            log.warn(`telegram send failed (plain-text fallback also failed): ${e2.message}`);
           }
           continue;
         }
@@ -119,7 +119,7 @@ export class Telegram {
         try {
           await this.bot.sendMessage(this.chatId, chunk, opts);
         } catch (e2) {
-          log.warn(`kirim telegram gagal (setelah retry): ${e2.message}`);
+          log.warn(`telegram send failed (after retry): ${e2.message}`);
         }
       }
     }
@@ -248,7 +248,7 @@ export class Telegram {
     const badge = getActiveMode() === 'live' ? '🟢 LIVE' : '📝 PAPER';
     const nl = text.indexOf('\n');
     const merged = nl === -1 ? `${badge} · ${text}` : `${badge} · ${text.slice(0, nl)}${text.slice(nl)}`;
-    this._send(merged).catch((e) => log.warn(`notify gagal: ${e.message}`));
+    this._send(merged).catch((e) => log.warn(`notify failed: ${e.message}`));
   }
 
   async _onMessage(msg) {

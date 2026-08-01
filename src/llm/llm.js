@@ -33,7 +33,7 @@ export class LLM {
         lessons = all.filter((l) => l.lang === 'en');
         if (lessons.length !== all.length) {
           this._persistLessons();
-          log.info(`purge ${all.length - lessons.length} lesson non-English lama`);
+          log.info(`purged ${all.length - lessons.length} old non-English lessons`);
         }
       } catch { /* mulai kosong */ }
     }
@@ -160,11 +160,11 @@ Reply ONLY JSON: {"lesson":"<english lesson>"}`;
         });
         if (lessons.length > 200) lessons = lessons.slice(-200);
         this._persistLessons();
-        log.info(`lesson baru: ${parsed.lesson}`);
+        log.info(`new lesson: ${parsed.lesson}`);
         return parsed.lesson;
       }
     } catch (e) {
-      log.warn('recordTradeLesson gagal:', e.message);
+      log.warn('recordTradeLesson failed:', e.message);
     }
     return null;
   }
@@ -218,11 +218,11 @@ Reply ONLY JSON: {"lessons":[{"text":"...","outcome":"WIN|LOSS|PATTERN"}, ...]}`
         }
         if (lessons.length > 200) lessons = lessons.slice(-200);
         this._persistLessons();
-        log.info(`deriveResetLessons: ${newLessons.length} pelajaran strategis disimpan`);
+        log.info(`deriveResetLessons: ${newLessons.length} strategic lessons saved`);
       }
       return newLessons;
     } catch (e) {
-      log.warn('deriveResetLessons gagal:', e.message);
+      log.warn('deriveResetLessons failed:', e.message);
       return [];
     }
   }

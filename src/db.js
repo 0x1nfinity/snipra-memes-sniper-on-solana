@@ -60,7 +60,7 @@ export function initDb() {
       PRIMARY KEY (chain, token)
     );
   `);
-  log.info('sqlite siap: data/snipra.db');
+  log.info('sqlite ready: data/snipra.db');
   return db;
 }
 

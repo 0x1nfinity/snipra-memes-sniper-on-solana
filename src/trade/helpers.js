@@ -54,7 +54,7 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
     llmVerdict: c.llmVerdict || null,
   });
   breaker.recordOpen(chainKey);
-  log.info(`posisi dibuka [${source}]: ${c.symbol} @ ${c.priceUsd}`);
+  log.info(`position opened [${source}]: ${c.symbol} @ ${c.priceUsd}`);
   return { ...pos, txid: res.txid };
 }
 

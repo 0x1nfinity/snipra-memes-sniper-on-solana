@@ -217,7 +217,7 @@ setStatusDeps({
 async function screeningCycle(force = false) {
   if (paused && !force) return;
   if (screenBusy) {
-    log.info('screening di-skip: cycle sebelumnya masih berjalan');
+    log.info('screening skipped: previous cycle still running');
     return;
   }
   screenBusy = true;
@@ -228,7 +228,7 @@ async function screeningCycle(force = false) {
     // BUG-B1: cek slot kosong SEBELUM screening — hemat rate limit & token LLM
     const availSlots = effMax - openPositions().length;
     if (!force && availSlots <= 0) {
-      log.info(`screening di-skip: posisi penuh (${openPositions().length}/${effMax})`);
+      log.info(`screening skipped: positions full (${openPositions().length}/${effMax})`);
       if (cfg.telegram.notifyScreening) {
         telegram.notify(
           `⏭️ Screening — Skipped\n\nPositions full ${openPositions().length}/${effMax} — no open slots.`
@@ -255,14 +255,14 @@ async function screeningCycle(force = false) {
           const pos = await buyToken(c.chain, c.address, undefined, 'screener', c, executor, onTradeClosed);
           bought.push({ c, pos });
           boughtToken = true;
-          if (attempt > 0) log.info(`retry #${attempt} berhasil utk ${c.symbol}`);
+          if (attempt > 0) log.info(`retry #${attempt} succeeded for ${c.symbol}`);
           break;
         } catch (e) {
           lastError = e.message;
           // Hanya retry utk error transient (RPC, network, slippage), bukan error permanen
           const isTransient = /timeout|ECONN|EAI_|ENOTFOUND|ETIMEDOUT|nonce|underpriced|replacement|rate.?limit|429|503/i.test(e.message);
           if (!isTransient || attempt >= MAX_RETRIES) break;
-          log.debug(`retry #${attempt + 1} utk ${c.symbol} dalam ${RETRY_DELAY_MS}ms: ${e.message}`);
+          log.debug(`retry #${attempt + 1} for ${c.symbol} in ${RETRY_DELAY_MS}ms: ${e.message}`);
           await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
         }
       }
@@ -311,7 +311,7 @@ async function screeningCycle(force = false) {
       }
     }
   } catch (e) {
-    log.error('screening cycle gagal:', e.message);
+    log.error('screening cycle failed:', e.message);
   } finally {
     screenBusy = false;
   }
@@ -329,7 +329,7 @@ function startScreeningLoop() {
     screeningCycle();
     screenTimer = setInterval(screeningCycle, periodMs);
   }, delay);
-  log.info(`screening loop start (tiap ${intervalSec}s, boundary wall-clock, mulai dalam ${Math.round(delay / 1000)}s)`);
+  log.info(`screening loop start (every ${intervalSec}s, boundary wall-clock, starting in ${Math.round(delay / 1000)}s)`);
 }
 
 // Restart ketiga timer (screening/monitor/status) — dipakai saat interval diubah

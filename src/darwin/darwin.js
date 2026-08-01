@@ -45,7 +45,7 @@ export class Darwin {
         db = JSON.parse(fs.readFileSync(FILE, 'utf8'));
         log.info(`darwin loaded: gen ${db.generation}, ${db.genomes.length} genomes`);
       } catch (e) {
-        log.error('darwin.json rusak:', e.message);
+        log.error('darwin.json corrupted:', e.message);
       }
     }
     if (db.genomes.length === 0) this._seed();

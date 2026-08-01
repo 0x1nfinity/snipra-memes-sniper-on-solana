@@ -102,7 +102,7 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
   try {
     raw = await discover(chainMap, cfg.screener.sources);
   } catch (e) {
-    log.error('discovery gagal:', e.message);
+    log.error('discovery failed:', e.message);
     return { candidates: [], genomeId, scanned: 0 };
   }
 
@@ -119,14 +119,14 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
       c.ageMinutes <= f.maxAgeHours * 60
     );
   });
-  log.info(`scanned ${raw.length}, lolos pre-filter ${cheap.length}`);
+  log.info(`scanned ${raw.length}, passed pre-filter ${cheap.length}`);
 
   // Entry guard sniper: cek pump/ATH SEBELUM enrichment (hemat rate limit).
   // Semua kandidat pre-filter tetap diamati agar ATH-nya terlacak dari waktu ke waktu.
   const guarded = [];
   for (const c of cheap) {
     const reason = entryGuardCheck(c, cfg.screener.entryGuard);
-    if (reason) log.info(`${c.symbol} ditahan entry guard: ${reason}`);
+    if (reason) log.info(`${c.symbol} held by entry guard: ${reason}`);
     else guarded.push(c);
   }
 
@@ -153,7 +153,7 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
   for (const c of guarded) {
     const res = evaluate(c, filters);
     if (res.pass) passed.push(c);
-    else log.debug(`${c.symbol} ditolak: ${res.reasons.join(', ')}`);
+    else log.debug(`${c.symbol} rejected: ${res.reasons.join(', ')}`);
   }
 
   // Ranking dan potong sesuai slot
@@ -172,22 +172,22 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
         if (v.action === 'buy' && v.confidence >= cfg.llm.minConfidence) {
           gated.push(c);
         } else {
-          log.info(`${c.symbol} ditolak LLM (${v.action}, conf ${v.confidence}): ${v.reason}`);
+          log.info(`${c.symbol} rejected by LLM (${v.action}, conf ${v.confidence}): ${v.reason}`);
         }
       } catch (e) {
         // failOpen=true (default): LLM error → token lolos (backward compat)
         // failOpen=false: LLM error → token ditolak (lebih aman)
         if (cfg.llm.failOpen !== false) {
-          log.warn(`LLM gagal utk ${c.symbol}, loloskan tanpa gate:`, e.message);
+          log.warn(`LLM failed for ${c.symbol}, passing without gate:`, e.message);
           gated.push(c);
         } else {
-          log.warn(`LLM gagal utk ${c.symbol}, ditolak (failOpen=false):`, e.message);
+          log.warn(`LLM failed for ${c.symbol}, rejected (failOpen=false):`, e.message);
         }
       }
     }
     passed = gated;
   }
 
-  log.info(`kandidat final: ${passed.map((c) => c.symbol).join(', ') || '(kosong)'}`);
+  log.info(`final candidates: ${passed.map((c) => c.symbol).join(', ') || '(none)'}`);
   return { candidates: passed, genomeId, scanned: raw.length };
 }

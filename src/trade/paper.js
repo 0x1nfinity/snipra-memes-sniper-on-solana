@@ -122,10 +122,10 @@ export class PaperChain {
       if (pairInfo.fallbackPriceUsd > 0) {
         const px = await nativePriceUsd(this.key);
         price = pairInfo.fallbackPriceUsd / px;
-        log.warn(`[${this.key}] harga live ${tokenAddress.slice(0, 8)} tidak tersedia — pakai harga terakhir ($${pairInfo.fallbackPriceUsd})`);
+        log.warn(`[${this.key}] live price ${tokenAddress.slice(0, 8)} unavailable — using last known price ($${pairInfo.fallbackPriceUsd})`);
       } else {
         price = 0;
-        log.warn(`[${this.key}] ${tokenAddress.slice(0, 8)} tidak likuid & tanpa fallback — dianggap rug, close @ 0`);
+        log.warn(`[${this.key}] ${tokenAddress.slice(0, 8)} illiquid & no fallback — treated as rug, close @ 0`);
       }
     }
     const fillPrice = price * (1 - slippageBps / 10000); // jual lebih murah (slippage)

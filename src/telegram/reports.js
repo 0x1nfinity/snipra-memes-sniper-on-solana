@@ -76,12 +76,12 @@ export function startStatusLoop() {
   if (!min || min <= 0) return;
   const periodMs = min * 60000;
   const delay = periodMs - (Date.now() % periodMs); // ke boundary berikutnya
-  const doReport = () => sendStatusReport().catch((e) => log.warn('status report gagal:', e.message));
+  const doReport = () => sendStatusReport().catch((e) => log.warn('status report failed:', e.message));
   statusTimer = setTimeout(() => {
     doReport();
     statusTimer = setInterval(doReport, periodMs);
   }, delay);
-  log.info(`status report loop start (tiap ${min} menit, boundary wall-clock, mulai dalam ${Math.round(delay / 1000)}s)`);
+  log.info(`status report loop start (every ${min}min, boundary wall-clock, starting in ${Math.round(delay / 1000)}s)`);
 }
 
 export function stopStatusLoop() {

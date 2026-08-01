@@ -32,7 +32,7 @@ export class PositionManager {
     // atau sell() yang gagal konfirmasi walau swap sudah sukses on-chain). Jalan sekali saat
     // startup, LALU berkala tiap tick (lihat _maybeReconcile, dibatasi monitor.onchainReconcileSec
     // agar tidak membebani RPC).
-    this._reconcileAll().catch((e) => log.warn('startup safety check gagal:', e.message));
+    this._reconcileAll().catch((e) => log.warn('startup safety check failed:', e.message));
     this._lastReconcileAt = Date.now();
   }
 
@@ -65,7 +65,7 @@ export class PositionManager {
       const bal = await chain.tokenBalance(pos.address);
       const rawNum = typeof bal.raw === 'bigint' ? Number(bal.raw) : Number(bal.raw);
       if (rawNum <= 0 && pos.remainingPct > 0) {
-        log.warn(`${pos.symbol}: on-chain balance 0 tapi posisi masih terbuka — auto-close (reconcile)`);
+        log.warn(`${pos.symbol}: on-chain balance 0 but position still open — auto-closing (reconcile)`);
         const trade = closePosition(pos, { reason: 'auto-close: on-chain balance 0 (reconcile)', receivedNative: 0, txid: pos.lastSellTx || '' });
         const saldo = await this._saldo(pos.chain);
         this.notify(
@@ -74,7 +74,7 @@ export class PositionManager {
         this.onTradeClosed(trade);
       }
     } catch (e) {
-      log.debug(`reconcile ${pos.symbol} dilewati: ${e.message}`);
+      log.debug(`reconcile ${pos.symbol} skipped: ${e.message}`);
     }
   }
 
@@ -121,7 +121,7 @@ export class PositionManager {
         try {
           pairs = await tokensBatch(dsId, addrs);
         } catch (e) {
-          log.warn(`refresh harga ${chainKey} attempt 1 gagal: ${e.message}, retry…`);
+          log.warn(`refresh price ${chainKey} attempt 1 failed: ${e.message}, retrying…`);
           await new Promise((r) => setTimeout(r, 2000));
           pairs = await tokensBatch(dsId, addrs);
         }
@@ -141,13 +141,13 @@ export class PositionManager {
             p._tickDropPct = 0;
             // Peringatkan jika harga stale >stalePriceWarnSec (token mungkin delisted/rug)
             if (now - p.lastPriceAt > staleMs && p.lastPriceAt > 0) {
-              log.warn(`${p.symbol}: harga tidak tersedia selama ${Math.round((now - p.lastPriceAt) / 1000)}s — token mungkin delisted`);
+              log.warn(`${p.symbol}: price unavailable for ${Math.round((now - p.lastPriceAt) / 1000)}s — token may be delisted`);
             }
             continue;
           }
           // Sanity: pembacaan dari pair likuiditas ~0 tidak dipercaya (glitch harga)
           if (liqUsd > 0 && liqUsd < minLiq) {
-            log.warn(`${p.symbol}: harga $${price} diabaikan (likuiditas $${liqUsd.toFixed(0)} < $${minLiq})`);
+            log.warn(`${p.symbol}: price $${price} ignored (liquidity $${liqUsd.toFixed(0)} < $${minLiq})`);
             p._tickDropPct = 0;
             continue;
           }
@@ -164,13 +164,13 @@ export class PositionManager {
           if (!(price > 0)) continue;
           // Same sanity guard as active positions: skip low-liquidity pairs
           if (liqUsd > 0 && liqUsd < minLiq) {
-            log.warn(`moonbag ${m.symbol}: harga $${price} diabaikan (likuiditas $${liqUsd.toFixed(0)} < $${minLiq})`);
+            log.warn(`moonbag ${m.symbol}: price $${price} ignored (liquidity $${liqUsd.toFixed(0)} < $${minLiq})`);
             continue;
           }
           updateMoonbagPrice(m, price);
         }
       } catch (e) {
-        log.warn(`refresh harga ${chainKey} gagal (setelah retry):`, e.message);
+        log.warn(`refresh price ${chainKey} failed (after retry):`, e.message);
       }
     }
   }

@@ -35,7 +35,7 @@ export class SolanaChain {
       this.wallet = Keypair.fromSecretKey(bs58.decode(process.env.SOLANA_PRIVATE_KEY));
       log.info(`wallet: ${this.wallet.publicKey.toBase58()}`);
     } else {
-      log.warn('SOLANA_PRIVATE_KEY kosong — hanya bisa dry-run');
+      log.warn('SOLANA_PRIVATE_KEY empty — dry-run only');
     }
   }
 
@@ -164,7 +164,7 @@ export class SolanaChain {
       try {
         return await this._gmgnSwap(inputMint, outputMint, rawAmount, slippageBps);
       } catch (e) {
-        log.warn('GMGN gagal, fallback ke Jupiter:', e.message);
+        log.warn('GMGN failed, falling back to Jupiter:', e.message);
       }
     }
     return this._jupiterSwap(inputMint, outputMint, rawAmount, slippageBps);
@@ -195,7 +195,7 @@ export class SolanaChain {
       try {
         solBefore = await this.connection.getBalance(this.wallet.publicKey);
       } catch (e) {
-        log.warn(`gagal baca saldo SOL sebelum swap: ${e.message}`);
+        log.warn(`failed to read SOL balance before swap: ${e.message}`);
       }
     }
 
@@ -216,7 +216,7 @@ export class SolanaChain {
       } catch (e) {
         // Fallback: pakai quote outAmount (tanpa koreksi fee — estimasi terbaik)
         receivedNative = Number(res.outAmountRaw) / LAMPORTS_PER_SOL;
-        log.warn(`gagal baca saldo SOL setelah swap, fallback ke quote: ${receivedNative.toFixed(4)} SOL (${e.message})`);
+        log.warn(`failed to read SOL balance after swap, falling back to quote: ${receivedNative.toFixed(4)} SOL (${e.message})`);
       }
     }
 
@@ -243,11 +243,11 @@ export class SolanaChain {
         }
       } catch (e) {
         if (e.onChainFailure) throw e; // kegagalan on-chain nyata — lempar
-        log.debug(`getSignatureStatuses ${txid} gagal, retry: ${e.message}`);
+        log.debug(`getSignatureStatuses ${txid} failed, retrying: ${e.message}`);
       }
       await sleep(2000);
     }
-    log.warn(`tx ${txid} belum confirmed setelah ${maxWaitMs / 1000}s`);
+    log.warn(`tx ${txid} not confirmed after ${maxWaitMs / 1000}s`);
     return false;
   }
 }

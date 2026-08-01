@@ -35,7 +35,7 @@ export class Executor {
           getActiveMode() === 'paper' ? new PaperChain(key, c) : new SolanaChain(c, { dryRun: false })
         );
       } catch (e) {
-        log.error(`init chain ${key} (${getActiveMode()}) gagal:`, e.message);
+        log.error(`init chain ${key} (${getActiveMode()}) failed:`, e.message);
       }
     }
     log.info(`executor mode=${getActiveMode()}, chains: ${[...this.chains.keys()].join(', ')}`);
@@ -95,7 +95,7 @@ export class Executor {
       );
     }
 
-    log.info(`buy ${chainKey} ${tokenAddress.slice(0, 8)}: ${amount} native (~$${usdValue.toFixed(2)}), saldo ${balance.toFixed(4)}`);
+    log.info(`buy ${chainKey} ${tokenAddress.slice(0, 8)}: ${amount} native (~$${usdValue.toFixed(2)}), balance ${balance.toFixed(4)}`);
     return chain.buy(tokenAddress, amount, cfg.trading.slippageBps, pairInfo);
   }
 
@@ -121,10 +121,10 @@ export class Executor {
     const { openPositions } = await import('../positions/state.js');
     const openList = [...openPositions()];
     if (positionManager && openList.length > 0) {
-      notify?.(`♻️ Paper reset — menutup ${openList.length} posisi terbuka…`);
+      notify?.(`♻️ Paper reset — closing ${openList.length} open positions…`);
       const results = await positionManager.closeAllPositions('paper reset');
       closedCount = results.filter((r) => !r.error).length;
-      log.info(`paper reset: ${closedCount}/${openList.length} posisi ditutup`);
+      log.info(`paper reset: ${closedCount}/${openList.length} positions closed`);
     }
 
     // 2. Derive lessons strategis dari riwayat sebelum data dihapus
@@ -150,8 +150,8 @@ export class Executor {
     // 5. Hapus realized PnL paper dari DB
     const tradesDeleted = deleteTrades('paper');
 
-    log.info(`paper reset: saldo + realized PnL dinolkan, ${tradesDeleted} trade paper dihapus` +
-      (lessonsDerived ? `, ${lessonsDerived} lessons disimpan` : ''));
+    log.info(`paper reset: balance + realized PnL zeroed, ${tradesDeleted} paper trades deleted` +
+      (lessonsDerived ? `, ${lessonsDerived} lessons saved` : ''));
     return { balances, tradesDeleted, closedCount, lessonsDerived };
   }
 

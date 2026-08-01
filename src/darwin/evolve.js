@@ -73,10 +73,10 @@ export async function runEvolve(trigger = 'manual', deps) {
       if (suggestion?.genes) {
         llmLines = geneDiffLines(filters, suggestion.genes);
         rationale = suggestion.rationale;
-        log.info(`LLM usul filter: ${JSON.stringify(suggestion.genes)} — ${rationale}`);
+        log.info(`LLM suggested filter: ${JSON.stringify(suggestion.genes)} — ${rationale}`);
       }
     } catch (e) {
-      log.warn('LLM suggestGenes gagal:', e.message);
+      log.warn('LLM suggestGenes failed:', e.message);
     }
   }
 
@@ -115,7 +115,7 @@ export function onTradeClosed(trade) {
   const cfg = getConfig();
   if (cfg.darwin.enabled) {
     const due = darwin.recordTrade(trade);
-    if (due) runEvolve('auto').catch((e) => log.error('auto-evolve gagal:', e.message));
+    if (due) runEvolve('auto').catch((e) => log.error('auto-evolve failed:', e.message));
   }
   if (cfg.llm.enabled && llm.available()) {
     llm.recordTradeLesson(trade).catch(() => {});

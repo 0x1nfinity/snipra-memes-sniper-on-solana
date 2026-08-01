@@ -225,7 +225,7 @@ function buildConfig(mode) {
         const paperSaved = JSON.parse(fs.readFileSync(paperFile, 'utf8'));
         merged = deepMerge(merged, paperSaved);
       } catch (e) {
-        log.warn(`config.paper.json rusak, override paper diabaikan:`, e.message);
+        log.warn(`config.paper.json corrupted, paper override ignored:`, e.message);
       }
     }
   }
@@ -247,13 +247,13 @@ function ensureConfigFiles() {
     delete toSave.paper; // paper.startBalance cuma relevan di config.paper.json
     delete toSave.trading.paperGas; // paperGas cuma relevan di config.paper.json
     fs.writeFileSync(liveFile, JSON.stringify(toSave, null, 2));
-    log.info('config.live.json belum ada — dibuat dengan nilai default');
+    log.info('config.live.json missing — created with default values');
   }
   const paperFile = configFileFor('paper');
   if (!fs.existsSync(paperFile)) {
     const seed = { paper: structuredClone(DEFAULTS.paper) };
     fs.writeFileSync(paperFile, JSON.stringify(seed, null, 2));
-    log.info('config.paper.json belum ada — dibuat (hanya override paper: startBalance)');
+    log.info('config.paper.json missing — created (paper override only: startBalance)');
   }
 }
 
@@ -272,18 +272,18 @@ export function loadConfig() {
     config = buildConfig(activeMode);
     log.info(`config loaded: config.live.json${activeMode === 'paper' ? ' + config.paper.json (override)' : ''} (mode=${activeMode})`);
   } catch (e) {
-    log.error(`config.live.json rusak, pakai defaults:`, e.message);
+    log.error(`config.live.json corrupted, using defaults:`, e.message);
     config = structuredClone(DEFAULTS);
   }
 
   // DRY_RUN override: jika diset, paksa paper
   if (process.env.DRY_RUN === '1' && activeMode !== 'paper') {
-    log.warn(`⚠️ DRY_RUN=1 di .env MEMAKSA mode 'paper' walau mode='${activeMode}'. Set DRY_RUN=0 untuk live.`);
+    log.warn(`⚠️ DRY_RUN=1 in .env FORCES mode 'paper' even though mode='${activeMode}'. Set DRY_RUN=0 for live.`);
     activeMode = 'paper';
     try {
       config = buildConfig(activeMode);
     } catch (e) {
-      log.error(`config.live.json rusak, pakai defaults:`, e.message);
+      log.error(`config.live.json corrupted, using defaults:`, e.message);
       config = structuredClone(DEFAULTS);
     }
   }
@@ -352,7 +352,7 @@ export function reloadConfig() {
   try {
     next = buildConfig(activeMode);
   } catch (e) {
-    log.debug('reload config dilewati (JSON belum valid):', e.message);
+    log.debug('config reload skipped (JSON not valid yet):', e.message);
     return { changed: false, timersChanged: false };
   }
   const prev = config;
@@ -381,7 +381,7 @@ export function switchMode(newMode) {
     config = buildConfig(activeMode);
     log.info(`switched mode ${oldMode} → ${activeMode}, config live.json${activeMode === 'paper' ? ' + paper.json (override)' : ''}`);
   } catch (e) {
-    log.error(`config.live.json rusak saat switch:`, e.message);
+    log.error(`config.live.json corrupted during switch:`, e.message);
     config = structuredClone(DEFAULTS);
   }
 
@@ -400,7 +400,7 @@ function watchFileChange(file) {
   fs.watchFile(file, { interval: 2000 }, () => {
     const res = reloadConfig();
     if (res.changed) {
-      log.info(`${path.basename(file)} berubah di disk — dimuat ulang tanpa restart`);
+      log.info(`${path.basename(file)} changed on disk — reloaded without restart`);
       configChangeCallback?.(res);
     }
   });
@@ -426,9 +426,9 @@ export function watchConfig(onChange) {
   configWatcher = true;
   try {
     refreshWatchers();
-    log.info(`hot-reload config aktif (pantau tiap 2s, mode=${activeMode})`);
+    log.info(`config hot-reload active (watching every 2s, mode=${activeMode})`);
   } catch (e) {
-    log.error('gagal memasang watcher config:', e.message);
+    log.error('failed to set up config watcher:', e.message);
   }
 }
 
