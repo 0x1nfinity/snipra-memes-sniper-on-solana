@@ -154,6 +154,13 @@ export function currentPnlPct(pos) {
   return pnlPct(pos.entryPrice, pos.currentPrice);
 }
 
+/** PnL riil dari SOL yang benar-benar masuk/keluar (termasuk slippage & fee swap),
+ *  berbeda dari currentPnlPct() yang cuma mark harga oracle di tick terakhir. */
+export function realizedPnlPct(pos) {
+  if (!pos.amountNative) return 0;
+  return ((pos.realizedNative - pos.amountNative) / pos.amountNative) * 100;
+}
+
 export function recordPartialSell(pos, { pctOfRemaining, receivedNative, tierIndex, txid }) {
   pos.remainingPct = pos.remainingPct * (1 - pctOfRemaining / 100);
   pos.realizedNative += receivedNative || 0;
@@ -164,7 +171,9 @@ export function recordPartialSell(pos, { pctOfRemaining, receivedNative, tierInd
 
 export function closePosition(pos, { reason, receivedNative, txid }) {
   pos.realizedNative += receivedNative || 0;
-  const pnl = currentPnlPct(pos);
+  // PnL final pakai SOL riil, bukan mark harga oracle — swap eksekusi (slippage,
+  // price impact, fee) sering meleset jauh dari harga poll terakhir.
+  const pnl = realizedPnlPct(pos);
   const trade = {
     ...pos,
     closedAt: Date.now(),

@@ -220,7 +220,7 @@ export class PositionManager {
           laddered = true;
           if (isLastTier || pos.remainingPct < 1) {
             const trade = closePosition(pos, { reason: `TP ladder selesai ${fmtPct(pnl)}`, receivedNative: 0, txid: res.txid });
-            await this._notifyClosed(pos, pnl, 'TP ladder selesai');
+            await this._notifyClosed(pos, trade.finalPnlPct, 'TP ladder selesai');
             this.onTradeClosed(trade);
             break;
           }
@@ -267,9 +267,9 @@ export class PositionManager {
     const results = [];
     for (const pos of [...openPositions()]) {
       try {
-        const pnl = currentPnlPct(pos);
-        await this._closeAll(pos, reason);
-        results.push({ symbol: pos.symbol, chain: pos.chain, pnl });
+        const { symbol, chain } = pos;
+        const trade = await this._closeAll(pos, reason);
+        results.push({ symbol, chain, pnl: trade.finalPnlPct });
       } catch (e) {
         results.push({ symbol: pos.symbol, chain: pos.chain, error: e.message });
       }
@@ -303,9 +303,8 @@ export class PositionManager {
 
   async _closeAll(pos, reason) {
     const res = await this.executor.sell(pos.chain, pos.address, 100, { labels: pos.labels, fallbackPriceUsd: pos.currentPrice });
-    const pnl = currentPnlPct(pos);
     const trade = closePosition(pos, { reason, receivedNative: res.receivedNative, txid: res.txid });
-    await this._notifyClosed(pos, pnl, reason);
+    await this._notifyClosed(pos, trade.finalPnlPct, reason);
     this.onTradeClosed(trade);
     return trade;
   }
