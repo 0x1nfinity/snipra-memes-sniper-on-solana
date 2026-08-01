@@ -36,7 +36,7 @@ function menuText(view, deps) {
   const head = view === 'filter' ? '🎛 *Menu · Screening Filter*' : '🎛 *Settings Menu*';
   return (
     `${head}\n` +
-    `Mode: ${getActiveMode() === 'paper' ? '📝 paper' : '🔴 LIVE'} · Chain: ${enabledChains || '(none)'} · Auto-buy: ${deps.isPaused() ? '⏸ off' : '▶️ on'}\n` +
+    `Mode: ${getActiveMode() === 'paper' ? '📝 paper' : '🟢 LIVE'} · Chain: ${enabledChains || '(none)'} · Auto-buy: ${deps.isPaused() ? '⏸ off' : '▶️ on'}\n` +
     (view === 'filter'
       ? `Adjust hard filters. LLM/Darwin via /set.`
       : `Buttons below. Screening filters → 🔧, technical settings via /set.`)
@@ -50,7 +50,7 @@ function menuKeyboard(view = 'main', deps) {
   if (view === 'main') {
     rows.push([
       { text: `${mark(getActiveMode() === 'paper')}📝 paper`, callback_data: 'm:mode:paper' },
-      { text: `${mark(getActiveMode() === 'live')}🔴 live`, callback_data: 'm:mode:live' },
+      { text: `${mark(getActiveMode() === 'live')}⚡ live`, callback_data: 'm:mode:live' },
     ]);
     rows.push([
       { text: `${mark(!deps.isPaused())}▶️ auto-buy on`, callback_data: 'm:auto:on' },

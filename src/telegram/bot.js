@@ -16,7 +16,6 @@ const log = createLogger('telegram');
 // no manual BotFather setup needed.
 const COMMANDS = [
   { command: 'status', description: 'Bot status, mode, positions & balance' },
-  { command: 'positions', description: 'Open positions + real-time PnL' },
   { command: 'stats', description: 'Win rate, avg PnL, last trades' },
   { command: 'screen', description: 'Screen now + immediately buy candidates that pass' },
   { command: 'buy', description: 'Buy manual: /buy <chain> <address> [amount]' },
@@ -246,7 +245,7 @@ export class Telegram {
    * live tidak pernah tertukar, tanpa menambah baris ekstra yang mepet.
    */
   notify(text) {
-    const badge = getActiveMode() === 'live' ? '🔴 LIVE' : '📝 PAPER';
+    const badge = getActiveMode() === 'live' ? '🟢 LIVE' : '📝 PAPER';
     const nl = text.indexOf('\n');
     const merged = nl === -1 ? `${badge} · ${text}` : `${badge} · ${text.slice(0, nl)}${text.slice(nl)}`;
     this._send(merged).catch((e) => log.warn(`notify gagal: ${e.message}`));

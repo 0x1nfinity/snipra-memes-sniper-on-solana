@@ -44,6 +44,11 @@ export class PositionManager {
     }
   }
 
+  /** Reconcile on-demand terhadap saldo on-chain, dipanggil dari /status & /positions agar data yang ditampilkan selalu fresh. */
+  async reconcileNow() {
+    await this._reconcileAll();
+  }
+
   /** Jalankan _reconcileAll paling sering tiap monitor.onchainReconcileSec, dipanggil dari tick(). */
   async _maybeReconcile() {
     const sec = getConfig().monitor.onchainReconcileSec ?? 60;
@@ -184,18 +189,18 @@ export class PositionManager {
           if (sudden && !pos._slPending) {
             pos._slPending = { pnl, at: Date.now() };
             this.notify(
-              `⚠️ Stop Loss — Tertunda\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}, turun ${(pos._tickDropPct).toFixed(0)}% dalam 1 tick\nDicek ulang tick berikutnya.`
+              `⚠️ Stop Loss — Pending\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}, dropped ${(pos._tickDropPct).toFixed(0)}% in 1 tick\nRechecking next tick.`
             );
             continue;
           }
           pos._slPending = null;
-          await this._closeAll(pos, `SL ${fmtPct(pnl)}`);
+          await this._closeAll(pos, 'SL');
           continue;
         }
         // Harga pulih di atas SL padahal tadi sempat pending → glitch/flash terkonfirmasi
         if (pos._slPending) {
           this.notify(
-            `✅ Stop Loss — Dibatalkan\n\n${this._link(pos)} — PnL pulih ke ${fmtPct(pnl)} (kemungkinan glitch/flash dump)`
+            `✅ Stop Loss — Cancelled\n\n${this._link(pos)} — PnL recovered to ${fmtPct(pnl)} (likely glitch/flash dump)`
           );
           pos._slPending = null;
         }
@@ -215,12 +220,12 @@ export class PositionManager {
             txid: res.txid,
           });
           this.notify(
-            `🎯 Take Profit — Tier ${i + 1}\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}, jual ${tier.sellPct}%\nSisa posisi: ${pos.remainingPct.toFixed(1)}%`
+            `🎯 Take Profit — Tier ${i + 1}\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}, sold ${tier.sellPct}%\nRemaining position: ${pos.remainingPct.toFixed(1)}%`
           );
           laddered = true;
           if (isLastTier || pos.remainingPct < 1) {
-            const trade = closePosition(pos, { reason: `TP ladder selesai ${fmtPct(pnl)}`, receivedNative: 0, txid: res.txid });
-            await this._notifyClosed(pos, trade.finalPnlPct, 'TP ladder selesai');
+            const trade = closePosition(pos, { reason: 'TP ladder complete', receivedNative: 0, txid: res.txid });
+            await this._notifyClosed(pos, trade.finalPnlPct, 'TP ladder complete');
             this.onTradeClosed(trade);
             break;
           }
@@ -238,13 +243,13 @@ export class PositionManager {
           if (!pos.trailingActive && (postTp || peakGain >= tr.activateGainPct)) {
             pos.trailingActive = true;
             this.notify(
-              `📈 Trailing — Aktif\n\n${this._link(pos)} — peak ${fmtPct(peakGain)}, trail ${tr.trailPct}%${postTp ? ' (post-TP)' : ''}`
+              `📈 Trailing — Active\n\n${this._link(pos)} — peak ${fmtPct(peakGain)}, trail ${tr.trailPct}%${postTp ? ' (post-TP)' : ''}`
             );
           }
           if (pos.trailingActive) {
             const dropFromPeak = ((pos.peakPrice - pos.currentPrice) / pos.peakPrice) * 100;
             if (dropFromPeak >= tr.trailPct) {
-              const reason = `Trailing stop: turun ${dropFromPeak.toFixed(1)}% dari puncak (PnL ${fmtPct(pnl)})`;
+              const reason = `Trailing stop: dropped ${dropFromPeak.toFixed(1)}% from peak`;
               if (postTp && tr.moonbagPct > 0 && pos.remainingPct > tr.moonbagPct) {
                 await this._exitToMoonbag(pos, reason, tr.moonbagPct);
               } else {

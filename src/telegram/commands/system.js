@@ -7,7 +7,7 @@ const HELP = `*snipra v2 — multi-chain meme sniper*
 
 *Controls*
 /menu — quick settings button panel
-/status — bot status & balance
+/status — bot status, open positions & balance
 /pause — stop auto-buy (monitoring keeps running)
 /resume — resume auto-buy
 /mode paper|live — papertest vs real on-chain
@@ -25,7 +25,6 @@ const HELP = `*snipra v2 — multi-chain meme sniper*
 /buy <chain> <address> [amount] — manual buy
 /sell <address> [pct] — sell a position (default 100%)
 /closeall — close all open positions
-/positions — open positions + PnL
 /stats — trading stats
 /papertrades — paper trade history from the database
 /paperreset — reset virtual balance to starting value
