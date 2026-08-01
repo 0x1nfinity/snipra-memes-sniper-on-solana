@@ -84,6 +84,7 @@ export class SolanaChain {
       slippageBps: String(slippageBps),
       restrictIntermediateTokens: 'true',
       platformFeeBps: String(JUP_PLATFORM_FEE_BPS),
+      instructionVersion: 'V2', // wajib utk kutip fee di token Token-2022 (custom 6014 kalau tak ada)
     });
     const quote = await fetchJson(`${base}/quote?${q}`, { headers: this._jupHeaders() });
     if (!quote?.outAmount) throw new Error(`Jupiter quote gagal: ${JSON.stringify(quote).slice(0, 200)}`);
