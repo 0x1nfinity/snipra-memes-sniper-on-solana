@@ -1,53 +1,68 @@
 # snipra v2 — Solana Meme Sniper
 
-Bot automation memecoin untuk **Solana**. (Versi Robinhood Chain/EVM sudah diekstrak
-ke proyek terpisah.)
+Memecoin trading bot for **Solana**. (The Robinhood Chain/EVM version has been
+extracted into a separate project.)
 
 ## Mode: paper vs live
 
-- **`paper` (default)** — papertest: trade berjalan persis seperti live (screening → open posisi → TP ladder/trailing/SL → close) memakai harga real-time + simulasi slippage, tapi dengan **saldo virtual** (`paper.startBalance`), tanpa menyentuh saldo on-chain. Semua trade yang close dicatat ke **SQLite** (`data/snipra.db`, tabel `trades`) lengkap dengan PnL. Darwin & LLM tetap belajar dari hasilnya.
-- **`live`** — transaksi on-chain sungguhan (Jupiter/GMGN di Solana).
+- **`paper` (default)** — paper trading: runs the exact same pipeline as live (screening → open position → TP ladder/trailing/SL → close) using real-time prices + simulated slippage, but with a **virtual balance** (`paper.startBalance`), never touching on-chain funds. Every closed trade is logged to **SQLite** (`data/snipra.db`, table `trades`) with full PnL. Darwin & the LLM still learn from the results.
+- **`live`** — real on-chain transactions (Jupiter/GMGN on Solana).
 
-Ganti mode via Telegram `/mode paper|live` (tersimpan di `data/.mode`, bukan di file config). Lihat hasil papertest: `/papertrades`, reset saldo virtual: `/paperreset`.
+Switch modes via Telegram `/mode paper|live` (persisted to `data/.mode`, not the config file). Review paper trade history with `/papertrades`, reset the virtual balance with `/paperreset`.
 
-## Fitur
+## Features
 
-| # | Fitur | Implementasi |
-|---|-------|--------------|
-| 1 | Screening meme Solana | DexScreener (discovery + data pair) + GoPlus (holders, honeypot, tax) |
-| 2 | Swap SOL↔meme | **Jupiter** lite-api (opsional **GMGN** trading API) |
-| 3 | TP Ladder | Tier bertingkat, `sellPct` dihitung dari sisa posisi |
-| 4 | Trailing profit | Aktif setelah `activateGainPct`, jual semua saat turun `trailPct` dari puncak |
-| 5 | Telegram | Semua config bisa diubah via `/set`, posisi & PnL dipantau real-time |
-| 6 | Darwin system | Populasi genome filter → fitness dari PnL trade → seleksi + crossover + mutasi otomatis |
-| 7 | LLM | OpenRouter / DeepSeek — gate sebelum buy + lessons post-mortem yang diinject balik ke prompt |
+| # | Feature | Implementation |
+|---|---------|-----------------|
+| 1 | Solana meme screening | DexScreener (discovery + pair data) + GoPlus (holders, honeypot, tax) |
+| 2 | SOL↔meme swaps | **Jupiter** lite-api (optional **GMGN** trading API) |
+| 3 | TP ladder | Staged tiers, `sellPct` computed from the remaining position |
+| 4 | Trailing profit | Activates after `activateGainPct`, sells everything on a `trailPct` drop from peak |
+| 5 | Telegram | All config editable via `/set`; `/status` shows open positions & real-time PnL (on-demand on-chain reconcile) in one message |
+| 6 | Darwin system | Filter-genome population → fitness from trade PnL → automatic selection + crossover + mutation |
+| 7 | LLM | OpenRouter / DeepSeek — gates buys + post-mortem lessons re-injected into the prompt |
 
-## Filter Screening (wajib + tambahan)
+## Screening filters (required + additional)
 
-Wajib: `minVolume24hUsd`, `minAgeHours`/`maxAgeHours`, `minLiquidityUsd`, `minMarketCapUsd`/`maxMarketCapUsd`, `minHolders`, `minTraders24h`.
-Tambahan: buy/sell ratio, anti-dump 1 jam, rasio volume/likuiditas, socials, honeypot/freezable (GoPlus), buy/sell tax maksimum.
+Required: `minVolume24hUsd`, `minAgeHours`/`maxAgeHours`, `minLiquidityUsd`, `minMarketCapUsd`/`maxMarketCapUsd`, `minHolders`, `minTraders24h`.
+Additional: buy/sell ratio, 1h anti-dump, volume/liquidity ratio, socials, honeypot/freezable (GoPlus), max buy/sell tax.
 
-Parameter numerik filter **dievolusi otomatis** oleh Darwin system; filter security tidak pernah dilonggarkan oleh evolusi.
+Numeric filter parameters are **auto-evolved** by the Darwin system; security filters are never loosened by evolution.
 
-## Konfigurasi
+## Configuration
 
-Semua setting ada di **`config.json` di root project** — edit langsung dengan editor apa pun, atau ubah runtime via Telegram `/set` (perubahan dipersist balik ke file yang sama). Field yang tidak ada di file otomatis memakai nilai default.
+All settings live in two **local, git-ignored** JSON files at the project root — they hold your personal strategy tuning and are never committed:
+
+- **`config.live.json`** — single source of truth for everything (screener, trading, llm, trailing, darwin, telegram, etc).
+- **`config.paper.json`** — overrides only a few paper-mode-specific fields on top of `config.live.json` (`paper.startBalance`, `trading.maxPositions`, `trading.buyAmount`, `trading.paperGas`). Every other setting always follows `config.live.json`, even in paper mode.
+
+Templates with inline documentation for every field ship in the repo:
+
+```bash
+cp config.live.example.json config.live.json
+cp config.paper.example.json config.paper.json
+```
+
+Strip the `//` comment lines from your copies (the templates use them for documentation, but plain JSON doesn't support comments). If you skip this step entirely, the bot auto-creates both files with sane defaults on first run.
+
+Edit values directly in the file, or change them at runtime via Telegram `/set` (persists straight back to the same file). Any field missing from the file falls back to the built-in default in `src/config.js`.
 
 ## Setup
 
 ```bash
 npm install
-cp .env.example .env   # isi kunci-kunci
-# sesuaikan config.json bila perlu
-npm run dev            # DRY RUN (default, aman)
+cp .env.example .env                        # fill in your keys
+cp config.live.example.json config.live.json    # optional — bot creates defaults if skipped
+cp config.paper.example.json config.paper.json  # optional
+npm run dev                                  # DRY RUN (default, safe)
 ```
 
-Minimal yang perlu diisi di `.env`:
-- `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` — buat bot via @BotFather
-- `SOLANA_PRIVATE_KEY` — hanya untuk mode live
-- `OPENROUTER_API_KEY` atau `DEEPSEEK_API_KEY` — hanya jika `llm.enabled=true`
+Minimum required in `.env`:
+- `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` — create a bot via @BotFather
+- `SOLANA_PRIVATE_KEY` — only needed for live mode
+- `OPENROUTER_API_KEY` or `DEEPSEEK_API_KEY` — only if `llm.enabled=true`
 
-Coba screening tanpa menjalankan bot penuh:
+Try screening without running the full bot:
 
 ```bash
 npm run screen
@@ -56,20 +71,21 @@ npm run screen
 ## Go live
 
 ```bash
-# 1. Jalankan papertest dulu sampai win rate & PnL meyakinkan (/papertrades)
-# 2. Ganti mode:
-#    - config.json: "mode": "live", atau
-#    - telegram: /mode live
+# 1. Run paper trading first until win rate & PnL look convincing (/papertrades)
+# 2. Switch mode via Telegram:
+#    /mode live
 npm start
 ```
 
-⚠️ **Mulai dengan nominal kecil** (`trading.buyAmount`). Memecoin sangat berisiko — bot ini bukan jaminan profit.
+⚠️ **Start with a small size** (`trading.buyAmount`). Memecoins are highly risky — this bot is not a profit guarantee.
 
-## Perintah Telegram
+## Telegram commands
 
-`/status` `/config` `/get` `/set` `/screen` `/buy` `/sell` `/positions` `/stats` `/papertrades` `/paperreset` `/pause` `/resume` `/mode` `/darwin` `/evolve` `/lessons` `/logs` `/stop`
+`/status` `/config` `/get` `/set` `/menu` `/screen` `/buy` `/sell` `/closeall` `/stats` `/papertrades` `/paperreset` `/pause` `/resume` `/mode` `/darwin` `/evolve` `/lessons` `/logs` `/help` `/stop`
 
-Contoh ubah config runtime:
+`/status` shows mode, balance, and **open positions + moonbag** (on-demand on-chain reconcile before rendering) in a single message.
+
+Runtime config examples:
 
 ```
 /set screener.filters.minLiquidityUsd 30000
@@ -78,40 +94,40 @@ Contoh ubah config runtime:
 /set llm.enabled true
 ```
 
-## Chain aktif
+## Active chain
 
-- **Solana** — dexscreenerId `solana`, executor Jupiter (atau GMGN).
+- **Solana** — dexscreenerId `solana`, executor Jupiter (or GMGN).
 
-## Arsitektur
+## Architecture
 
 ```
 src/
   index.js              # wiring, screening loop, auto-buy, graceful shutdown
-  config.js             # config + persist + /set path
+  config.js             # config + persistence + /set path resolution
   screener/
-    dexscreener.js      # discovery + data pair + batch harga
+    dexscreener.js      # discovery + pair data + batched prices
     goplus.js           # holders + honeypot + tax (Solana)
-    filters.js          # evaluasi filter + scoring
-    screener.js         # orkestrasi (darwin genome + LLM gate)
+    filters.js          # filter evaluation + scoring
+    screener.js         # orchestration (darwin genome + LLM gate)
   chains/
     solana.js           # Jupiter (default) / GMGN executor
-  trade/executor.js     # interface buy/sell lintas mode (paper/live)
-  trade/paper.js        # paper engine: saldo virtual, fill harga real + slippage
-  db.js                 # SQLite: riwayat trades, paper wallet & holdings
+  trade/executor.js     # cross-mode buy/sell interface (paper/live)
+  trade/paper.js        # paper engine: virtual balance, real price fills + slippage
+  db.js                 # SQLite: trade history, paper wallet & holdings
   positions/
-    state.js            # persist posisi, cooldown, stats
-    manager.js          # monitor: TP ladder → trailing → stop loss → reconcile on-chain
-  darwin/darwin.js      # evolusi genome filter
-  llm/llm.js            # OpenRouter/DeepSeek: gate + lessons
-  telegram/bot.js       # command handler
-config.live.json        # sumber tunggal semua pengaturan umum (screener/filter/llm/trailing/dll)
-config.paper.json       # HANYA override mode paper: paper.startBalance, trading.maxPositions, trading.buyAmount, trading.paperGas
-data/                   # snipra.db (SQLite), positions.*.json, darwin.json, lessons.json
+    state.js            # position, cooldown & stats persistence
+    manager.js           # monitor loop: TP ladder → trailing → stop loss → on-chain reconcile
+  darwin/darwin.js      # filter-genome evolution
+  llm/llm.js             # OpenRouter/DeepSeek: gate + lessons
+  telegram/bot.js        # command handler
+config.live.example.json   # documented template → copy to config.live.json (git-ignored)
+config.paper.example.json  # documented template → copy to config.paper.json (git-ignored)
+data/                       # snipra.db (SQLite), positions.*.json, darwin.json, lessons.json — all git-ignored
 ```
 
-## Sumber API (docs resmi)
+## API sources (official docs)
 
 - DexScreener: `https://docs.dexscreener.com/api/reference`
-- Jupiter Swap: `https://developers.jup.ag` (lite-api gratis: `lite-api.jup.ag/swap/v1`)
-- GMGN Cooperation API: `https://docs.gmgn.ai` (butuh approval, header `x-route-key`)
+- Jupiter Swap: `https://developers.jup.ag` (free lite-api: `lite-api.jup.ag/swap/v1`)
+- GMGN Cooperation API: `https://docs.gmgn.ai` (requires approval, `x-route-key` header)
 - GoPlus Security: `https://api.gopluslabs.io`
