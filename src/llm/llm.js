@@ -174,6 +174,60 @@ Reply ONLY JSON: {"lesson":"<english lesson>"}`;
   }
 
   /**
+   * Analisis batch semua trade paper yang akan dihapus saat /paperreset.
+   * Ekstrak pola strategis (bukan per-trade) untuk dipelajari sebelum data hilang.
+   * Return array lesson baru yang disimpan, atau [] bila LLM tidak tersedia.
+   */
+  async deriveResetLessons(trades, existingLessons) {
+    if (!trades || trades.length === 0) return [];
+    if (!this.available()) return [];
+    try {
+      const tradeLines = trades.map((t, i) =>
+        `${i + 1}. ${t.symbol} ${t.chain} — PnL ${t.pnl_pct?.toFixed(1)}% · ` +
+        `hold ${Math.round(t.hold_minutes ?? 0)}m · alasan: ${t.close_reason}` +
+        (t.llm_score ? ` · LLM conf ${t.llm_score.toFixed(2)}` : '')
+      ).join('\n');
+      const lessonLines = (existingLessons || []).slice(-20).map((l, i) =>
+        `${i + 1}. [${l.outcome}] ${l.text}`
+      ).join('\n');
+      const prompt = `You are reviewing a COMPLETED paper trading session before resetting it. Analyze ALL closed trades below and extract 3-5 HIGH-LEVEL strategic lessons (max 30 words each, ENGLISH). Focus on patterns across multiple trades — not single-trade observations. These lessons will be the ONLY thing carried forward to the next session.
+
+CLOSED TRADES (will be deleted after this):
+${tradeLines || '(none)'}
+
+EXISTING LESSONS (carried forward, don't repeat them):
+${lessonLines || '(none)'}
+
+Reply ONLY JSON: {"lessons":[{"text":"...","outcome":"WIN|LOSS|PATTERN"}, ...]}`;
+      const content = await this._chat([{ role: 'user', content: prompt }]);
+      const parsed = JSON.parse(content);
+      const newLessons = [];
+      if (Array.isArray(parsed.lessons)) {
+        for (const l of parsed.lessons) {
+          if (!l.text) continue;
+          lessons.push({
+            text: String(l.text).slice(0, 300),
+            outcome: l.outcome === 'LOSS' ? 'LOSS' : l.outcome === 'PATTERN' ? 'PATTERN' : 'WIN',
+            symbol: '*',
+            chain: 'paper',
+            pnl: 0,
+            lang: 'en',
+            at: Date.now(),
+          });
+          newLessons.push(l.text);
+        }
+        if (lessons.length > 200) lessons = lessons.slice(-200);
+        this._persistLessons();
+        log.info(`deriveResetLessons: ${newLessons.length} pelajaran strategis disimpan`);
+      }
+      return newLessons;
+    } catch (e) {
+      log.warn('deriveResetLessons gagal:', e.message);
+      return [];
+    }
+  }
+
+  /**
    * Mode chatbot dengan tool-calling. `tools` = { defs: [openai tool schema],
    * run: async (name, args) => resultObj }. Bila null, chat murni tanpa aksi.
    * Return teks jawaban akhir.
@@ -183,14 +237,13 @@ Reply ONLY JSON: {"lesson":"<english lesson>"}`;
     const system = {
       role: 'system',
       content:
-        `Kamu adalah "snipra", bot sniper memecoin multi-chain (Solana + Robinhood Chain) milik user. ` +
+        `Kamu adalah "snipra", bot sniper memecoin di Solana milik user. ` +
         `Jawab dalam bahasa Indonesia, santai tapi tajam, ringkas. ` +
         `Gunakan HANYA data pada konteks / hasil tool — jangan mengarang angka.\n` +
         (canTool
           ? `Kamu PUNYA tool untuk beraksi: screen_now, buy_token, sell_token, close_all_positions, get_positions. ` +
             `Jika user minta aksi (mis. "buy <address>", "jual X", "tutup semua"), PANGGIL tool yang sesuai — ` +
-            `jangan menyuruh user mengetik command. Untuk buy/sell butuh chain (solana/robinhood) & address; ` +
-            `jika address jelas tapi chain tidak, tebak dari format address (0x… = robinhood, base58 = solana). ` +
+            `jangan menyuruh user mengetik command. Untuk buy/sell butuh address (chain selalu solana). ` +
             `Setelah tool jalan, laporkan hasilnya singkat.\n`
           : `Kamu tidak punya akses eksekusi; jika user minta aksi arahkan ke command /buy /sell /closeall.\n`) +
         `\nKONTEKS REALTIME:\n${context}`,

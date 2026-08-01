@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { DATA_DIR, getActiveMode } from '../config.js';
+import { DATA_DIR, getActiveMode, getConfig } from '../config.js';
 import { recordTradeDb } from '../db.js';
 import { pnlPct } from '../utils.js';
 import { createLogger } from '../logger.js';
@@ -28,6 +28,10 @@ let state = freshState();
 let loadedMode = null; // mode yang sedang dimuat di memori (paper|live)
 
 export function loadState() {
+  // Flush dulu write debounced yg masih pending terhadap mode LAMA (loadedMode/state
+  // saat ini) SEBELUM di-reassign — kalau tidak, timer yg masih ngantri akan menulis
+  // konten state mode BARU (yg sudah di-load setelah reassign) ke file mode LAMA.
+  if (_persistTimer) persistNow();
   loadedMode = getActiveMode();
   state = freshState(); // reset dulu agar tidak membawa sisa mode sebelumnya
   const file = fileForMode(loadedMode);
@@ -73,7 +77,7 @@ function persist() {
 /** Force immediate write (used during shutdown or critical state changes) */
 function persistNow() {
   if (_persistTimer) { clearTimeout(_persistTimer); _persistTimer = null; }
-  _writeState();
+  _writeState(loadedMode); // capture mode at call time to prevent race with mode switch
 }
 
 function _writeState(modeOverride) {
@@ -133,9 +137,10 @@ export function addPosition({ chain, address, symbol, pairAddress, labels, entry
 }
 
 export function updatePrice(pos, price) {
-  // Guard harga anomali: lonjakan >500% dalam satu tick kemungkinan data rusak
-  if (pos.currentPrice > 0 && price > pos.currentPrice * 6) {
-    log.warn(`${pos.symbol}: harga anomali ${price} (prev ${pos.currentPrice}), skip tick`);
+  // Guard harga anomali: lonjakan >spikePct% dalam satu tick kemungkinan data rusak
+  const spikePct = getConfig().trading.priceAnomalySpikePct ?? 500;
+  if (spikePct > 0 && pos.currentPrice > 0 && price > pos.currentPrice * (1 + spikePct / 100)) {
+    log.warn(`${pos.symbol}: harga anomali ${price} (prev ${pos.currentPrice}, spike ${spikePct}%), skip tick`);
     return false;
   }
   pos.currentPrice = price;

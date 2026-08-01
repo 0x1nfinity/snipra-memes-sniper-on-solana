@@ -7,44 +7,47 @@ const COOLDOWN_MS = 300_000;    // 5 minute trip
 
 export class CircuitBreaker {
   constructor() {
-    this._opens = [];        // timestamps of position opens
-    this._trippedUntil = null;
+    this._opens = {};           // per-chain: chainKey → timestamps[]
+    this._trippedUntil = {};    // per-chain: chainKey → timestamp until
   }
 
   check(chainKey) {
-    if (this._trippedUntil && Date.now() < this._trippedUntil) {
-      const remaining = Math.ceil((this._trippedUntil - Date.now()) / 1000);
-      throw new Error(`Circuit breaker aktif — terlalu banyak posisi dibuka. Coba lagi dalam ${remaining}s.`);
+    const until = this._trippedUntil[chainKey];
+    if (until && Date.now() < until) {
+      const remaining = Math.ceil((until - Date.now()) / 1000);
+      throw new Error(`Circuit breaker ${chainKey} aktif — terlalu banyak posisi dibuka. Coba lagi dalam ${remaining}s.`);
     }
   }
 
   recordOpen(chainKey) {
     const now = Date.now();
-    this._opens.push(now);
-    // Prune old entries outside window
-    this._opens = this._opens.filter((t) => now - t < WINDOW_MS);
-    if (this._opens.length > MAX_OPENS_PER_WINDOW) {
-      this._trippedUntil = now + COOLDOWN_MS;
-      log.warn(`Circuit breaker TRIPPED! ${this._opens.length} opens in ${WINDOW_MS / 1000}s. Cooldown ${COOLDOWN_MS / 1000}s.`);
+    const opens = this._opens[chainKey] || [];
+    opens.push(now);
+    const pruned = opens.filter((t) => now - t < WINDOW_MS);
+    this._opens[chainKey] = pruned;
+    if (pruned.length > MAX_OPENS_PER_WINDOW) {
+      this._trippedUntil[chainKey] = now + COOLDOWN_MS;
+      log.warn(`Circuit breaker ${chainKey} TRIPPED! ${pruned.length} opens in ${WINDOW_MS / 1000}s. Cooldown ${COOLDOWN_MS / 1000}s.`);
     }
   }
 
   recordClose(chainKey) {
-    // Reset trip on successful close — even during cooldown
-    if (this._trippedUntil) {
-      this._trippedUntil = null;
-      this._opens = [];
-      log.info('Circuit breaker reset by position close.');
+    if (this._trippedUntil[chainKey]) {
+      this._trippedUntil[chainKey] = null;
+      this._opens[chainKey] = [];
+      log.info(`Circuit breaker ${chainKey} reset by position close.`);
     }
   }
 
-  status() {
-    const recent = this._opens.filter((t) => Date.now() - t < WINDOW_MS).length;
+  status(chainKey) {
+    const opens = this._opens[chainKey] || [];
+    const recent = opens.filter((t) => Date.now() - t < WINDOW_MS).length;
+    const until = this._trippedUntil[chainKey];
     return {
       recentOpens: recent,
       maxPerWindow: MAX_OPENS_PER_WINDOW,
-      tripped: Boolean(this._trippedUntil && Date.now() < this._trippedUntil),
-      remainingSeconds: this._trippedUntil ? Math.max(0, Math.ceil((this._trippedUntil - Date.now()) / 1000)) : 0,
+      tripped: Boolean(until && Date.now() < until),
+      remainingSeconds: until ? Math.max(0, Math.ceil((until - Date.now()) / 1000)) : 0,
     };
   }
 }

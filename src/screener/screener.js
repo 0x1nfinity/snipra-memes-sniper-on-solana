@@ -75,10 +75,11 @@ function entryGuardCheck(c, guard) {
 
 /**
  * Satu siklus screening.
- * @param {object} deps { darwin, llm }  — darwin memberi filter aktif, llm gate opsional
+ * @param {object} deps { darwin, llm, availSlots }  — darwin memberi filter aktif, llm gate opsional,
+ *   availSlots membatasi jumlah kandidat akhir (hemat rate limit)
  * @returns {Promise<{candidates: object[], genomeId: string|null, scanned: number}>}
  */
-export async function runScreening({ darwin, llm } = {}) {
+export async function runScreening({ darwin, llm, availSlots } = {}) {
   const cfg = getConfig();
 
   // chainMap: dexscreenerId → chainKey (hanya chain yang enabled)
@@ -129,8 +130,16 @@ export async function runScreening({ darwin, llm } = {}) {
     else guarded.push(c);
   }
 
+  // Cap enrichment GoPlus: kalau availSlots kecil, batasi jumlah enrichment
+  // agar tidak boros rate limit GoPlus
+  const maxEnrich = availSlots != null
+    ? Math.max(availSlots, cfg.screener.maxCandidatesPerCycle)
+    : cfg.screener.maxCandidatesPerCycle * 3;
   // Enrichment GoPlus (holders + honeypot) hanya utk yang lolos guard
-  await mapLimit(guarded, 2, async (c) => {
+  // Batasi jumlah: lebih banyak dari maxCandidatesPerCycle agar filter penuh
+  // punya cukup data untuk ranking, tapi tidak boros
+  const toEnrich = guarded.slice(0, maxEnrich);
+  await mapLimit(toEnrich, 2, async (c) => {
     const sec = await tokenSecurity(cfg.chains[c.chain], c.address);
     if (sec) {
       c.security = sec;
@@ -166,8 +175,14 @@ export async function runScreening({ darwin, llm } = {}) {
           log.info(`${c.symbol} ditolak LLM (${v.action}, conf ${v.confidence}): ${v.reason}`);
         }
       } catch (e) {
-        log.warn(`LLM gagal utk ${c.symbol}, loloskan tanpa gate:`, e.message);
-        gated.push(c);
+        // failOpen=true (default): LLM error → token lolos (backward compat)
+        // failOpen=false: LLM error → token ditolak (lebih aman)
+        if (cfg.llm.failOpen !== false) {
+          log.warn(`LLM gagal utk ${c.symbol}, loloskan tanpa gate:`, e.message);
+          gated.push(c);
+        } else {
+          log.warn(`LLM gagal utk ${c.symbol}, ditolak (failOpen=false):`, e.message);
+        }
       }
     }
     passed = gated;

@@ -9,7 +9,7 @@ const cache = new Map(); // chainKey → { t, price }
 const TTL = 60 * 1000;
 
 /**
- * Harga native chain (SOL/ETH) dalam USD via DexScreener, cache 60 detik.
+ * Harga native chain (SOL) dalam USD via DexScreener, cache 60 detik.
  * Dipakai untuk sizing swap berbasis USD dan konversi saldo paper.
  */
 export async function nativePriceUsd(chainKey) {
@@ -18,7 +18,7 @@ export async function nativePriceUsd(chainKey) {
 
   const chainCfg = getConfig().chains[chainKey];
   if (!chainCfg) throw new Error(`chain ${chainKey} tidak dikenal`);
-  const addr = chainCfg.type === 'solana' ? WSOL : chainCfg.weth;
+  const addr = WSOL;
 
   const pairs = await tokensBatch(chainCfg.dexscreenerId, [addr]);
   let best = null;

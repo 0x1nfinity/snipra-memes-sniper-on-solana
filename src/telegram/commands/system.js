@@ -75,11 +75,18 @@ export async function papertrades(args, msg, deps) {
 }
 
 export async function paperreset(args, msg, deps) {
-  const { balances, tradesDeleted } = await deps.executor.paperReset();
+  const { balances, tradesDeleted, closedCount, lessonsDerived } = await deps.executor.paperReset({
+    llm: deps.llm,
+    positionManager: deps.positionManager,
+    notify: (m) => deps.send(m),
+  });
   const lines = Object.entries(balances).map(([k, v]) => `${chainEmoji(k)} ${k}: ${v} ${nativeSym(k)}`);
+  const extra = [];
+  if (closedCount > 0) extra.push(`${closedCount} posisi ditutup`);
+  if (lessonsDerived > 0) extra.push(`${lessonsDerived} lessons disimpan`);
   return deps.send(
     `♻️ *Paper direset*\n${lines.join('\n')}\n` +
-    `📊 Realized PnL → *0* · ${tradesDeleted} trade paper dihapus dari statistik\n` +
-    `_(posisi terbuka tidak ditutup)_`
+    `📊 Realized PnL → *0* · ${tradesDeleted} trade paper dihapus` +
+    (extra.length ? `\n_(${extra.join(', ')})_` : '')
   );
 }

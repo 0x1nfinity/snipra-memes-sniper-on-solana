@@ -22,6 +22,8 @@ export async function sendStatusReport(deps) {
     executor, telegram, openPositions, currentPnlPct,
     moonbags, paused, screenBusy,
   } = deps || _sendDeps;
+  // Jangan kirim laporan berkala saat auto-buy sedang paused.
+  if (paused()) return;
   const cfg = getConfig();
   // #8 prioritas: kalau screening sedang jalan, tunggu sampai selesai agar
   // notif screening terkirim lebih dulu, baru laporan posisi.
@@ -47,21 +49,21 @@ export async function sendStatusReport(deps) {
     const posLines = chainPos.length
       ? chainPos.map((p) => {
           const pnl = currentPnlPct(p);
-          return `  ${pnl >= 0 ? '🟢' : '🔴'} ${tokenLink(p.symbol, cfg.chains[chainKey]?.gmgnSlug, p.address)} ${fmtPct(pnl)} · ⏱${fmtHold(p.openedAt)}`;
+          return `  ${pnl >= 0 ? '🟢' : '🔴'} ${tokenLink(p.symbol, cfg.chains[chainKey]?.gmgnSlug, p.address)} ${fmtPct(pnl)} · ${fmtHold(p.openedAt)}`;
         }).join('\n')
       : '  (tidak ada posisi terbuka)';
     blocks.push(
       `${chainHeader(chainKey)}\n` +
-      `💼 Saldo ${b.error ? '⚠️ ' + b.error : `${b.native.toFixed(4)} ${sym}`}\n` +
-      `📈 Unrealized ${fmtNative(unrealized, chainKey)}\n` +
-      `✅ Realized ${fmtNative(realized, chainKey)}${r ? ` · ${r.total} closed trades` : ''}\n` +
-      `📂 Posisi (${chainPos.length}):\n${posLines}`
+      `Saldo: ${b.error ? `⚠️ ${b.error}` : `${b.native.toFixed(4)} ${sym}`}\n` +
+      `Unrealized: ${fmtNative(unrealized, chainKey)}\n` +
+      `Realized: ${fmtNative(realized, chainKey)}${r ? ` (${r.total} closed)` : ''}\n\n` +
+      `Posisi (${chainPos.length}):\n${posLines}`
     );
   }
   const effMax = effectiveMax(cfg);
   telegram.notify(
-    `📊 *Laporan berkala* · ${getActiveMode()}\n` +
-    `Total posisi ${openPositions().length}/${effMax} · Moonbag ${moonbags().length} · Auto-buy ${paused() ? '⏸' : '▶️'}\n\n` +
+    `📊 Laporan berkala\n\n` +
+    `Posisi ${openPositions().length}/${effMax} · Moonbag ${moonbags().length} · Auto-buy ${paused() ? 'off' : 'on'}\n\n` +
     blocks.join('\n\n')
   );
 }

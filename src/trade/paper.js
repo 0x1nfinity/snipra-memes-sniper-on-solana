@@ -9,13 +9,7 @@ import { createLogger } from '../logger.js';
 
 const log = createLogger('paper');
 
-const GAS_FEE_NATIVE = {
-  solana: 0.000005,  // ~5000 lamports per swap
-  evm: 0.0001,       // ~$0.30 at $3000/ETH
-};
-
-/**
- * PaperChain: implementasi interface chain (buy/sell/nativeBalance) yang
+/** PaperChain: implementasi interface chain (buy/sell/nativeBalance) yang
  * berperilaku seperti live — harga real-time DexScreener, slippage disimulasikan —
  * tapi saldo & holdings virtual di SQLite. Tidak menyentuh on-chain sama sekali.
  */
@@ -27,6 +21,12 @@ export class PaperChain {
 
   get address() {
     return 'PAPER';
+  }
+
+  /** gas fee dari config atau fallback hardcoded */
+  _gasFee() {
+    const cfg = getConfig();
+    return cfg.trading.paperGas?.[this.cfg.type] ?? 0.000005;
   }
 
   /** saldo awal dalam native, dari paper.startBalanceUsd (kurs terkini) */
@@ -96,7 +96,7 @@ export class PaperChain {
     const fillPrice = price * (1 + slippageBps / 10000); // beli lebih mahal (slippage)
     const tokens = amountNative / fillPrice;
 
-    const gasFee = GAS_FEE_NATIVE[this.cfg.type] || 0;
+    const gasFee = this._gasFee();
     paperAdjustBalance(this.key, -(amountNative + gasFee));
     paperSetHolding(this.key, tokenAddress, paperHolding(this.key, tokenAddress) + tokens);
 
@@ -131,7 +131,7 @@ export class PaperChain {
     const fillPrice = price * (1 - slippageBps / 10000); // jual lebih murah (slippage)
     const receivedNative = tokens * fillPrice;
 
-    const gasFee = GAS_FEE_NATIVE[this.cfg.type] || 0;
+    const gasFee = this._gasFee();
     // Gas is already deducted from gotNative before crediting
     paperSetHolding(this.key, tokenAddress, held - tokens);
     paperAdjustBalance(this.key, receivedNative - gasFee);

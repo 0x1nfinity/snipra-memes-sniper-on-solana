@@ -1,25 +1,46 @@
-import { fetchJson, mapLimit } from '../utils.js';
+import { fetchJson, mapLimit, sleep } from '../utils.js';
 import { createLogger } from '../logger.js';
 
 const log = createLogger('dexscreener');
 const BASE = 'https://api.dexscreener.com';
 
 // Rate limit resmi: 60/min utk endpoint discovery, 300/min utk endpoint pairs/tokens.
+// Rate limiter sederhana: minimum interval antar request per kategori endpoint.
+const _lastCall = {};
+function _rateLimit(key, minIntervalMs) {
+  const now = Date.now();
+  const prev = _lastCall[key] || 0;
+  const nextSlot = Math.max(prev + minIntervalMs, now);
+  // Reserve slot SYNCHRONOUSLY (sebelum await manapun) supaya beberapa caller
+  // konkuren (mis. mapLimit dgn 4 worker) tidak membaca _lastCall basi yang sama
+  // dan menembak di waktu yang sama — tiap caller lihat slot yg sudah direservasi
+  // caller sebelumnya, jadi antre berurutan.
+  _lastCall[key] = nextSlot;
+  const wait = nextSlot - now;
+  return wait > 0 ? sleep(wait) : Promise.resolve();
+}
+
+const DISCOVERY_MIN_MS = 1000;  // 60 req/min → 1 req/s
+const PAIRS_MIN_MS = 200;       // 300 req/min → 5 req/s
 
 export async function latestTokenProfiles() {
+  await _rateLimit('discovery', DISCOVERY_MIN_MS);
   return fetchJson(`${BASE}/token-profiles/latest/v1`);
 }
 
 export async function latestBoosts() {
+  await _rateLimit('discovery', DISCOVERY_MIN_MS);
   return fetchJson(`${BASE}/token-boosts/latest/v1`);
 }
 
 export async function topBoosts() {
+  await _rateLimit('discovery', DISCOVERY_MIN_MS);
   return fetchJson(`${BASE}/token-boosts/top/v1`);
 }
 
 /** Semua pair utk satu token → array pair */
 export async function tokenPairs(chainId, tokenAddress) {
+  await _rateLimit('pairs', PAIRS_MIN_MS);
   return fetchJson(`${BASE}/token-pairs/v1/${chainId}/${tokenAddress}`);
 }
 
@@ -28,6 +49,7 @@ export async function tokensBatch(chainId, addresses) {
   const out = [];
   for (let i = 0; i < addresses.length; i += 30) {
     const chunk = addresses.slice(i, i + 30);
+    await _rateLimit('pairs', PAIRS_MIN_MS);
     const res = await fetchJson(`${BASE}/tokens/v1/${chainId}/${chunk.join(',')}`);
     if (Array.isArray(res)) out.push(...res);
   }

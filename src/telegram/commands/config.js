@@ -10,7 +10,6 @@ const MENU_NUM = {
   // ── main / trading ──
   si: { group: 'main', path: 'screener.intervalSec', step: 300, min: 300, max: 21600, label: '🔍 Scan', fmt: (v) => `${Math.round(v / 60)}m` },
   bs: { group: 'main', path: 'chains.solana.buyAmount', step: 0.05, min: 0.05, max: 50, label: '💰 Buy SOL', fmt: (v) => `${+v.toFixed(3)}` },
-  be: { group: 'main', path: 'chains.robinhood.buyAmount', step: 0.005, min: 0.005, max: 5, label: '💰 Buy ETH', fmt: (v) => `${+v.toFixed(4)}` },
   sl: { group: 'main', path: 'trading.stopLossPct', step: 5, min: -90, max: -5, label: '🛑 SL', fmt: (v) => `${v}%` },
   ta: { group: 'main', path: 'trailing.activateGainPct', step: 5, min: 5, max: 500, label: '📈 Trail↑', fmt: (v) => `${v}%` },
   tp: { group: 'main', path: 'trailing.trailPct', step: 1, min: 1, max: 50, label: '📉 Trail↓', fmt: (v) => `${v}%` },
@@ -28,10 +27,14 @@ const MENU_NUM = {
 
 function menuText(view, deps) {
   const cfg = getConfig();
+  const enabledChains = Object.entries(cfg.chains)
+    .filter(([, c]) => c.enabled)
+    .map(([k]) => k)
+    .join(', ');
   const head = view === 'filter' ? '🎛 *Menu · Filter Screening*' : '🎛 *Menu Pengaturan*';
   return (
     `${head}\n` +
-    `Mode: ${getActiveMode() === 'paper' ? '📝 paper' : '🔴 LIVE'} · Chain: ${cfg.activeChain} · Auto-buy: ${deps.isPaused() ? '⏸ off' : '▶️ on'}\n` +
+    `Mode: ${getActiveMode() === 'paper' ? '📝 paper' : '🔴 LIVE'} · Chain: ${enabledChains || '(none)'} · Auto-buy: ${deps.isPaused() ? '⏸ off' : '▶️ on'}\n` +
     (view === 'filter'
       ? `Atur hard filter. LLM/Darwin via /set.`
       : `Tombol di bawah. Filter screening → 🔧, teknis via /set.`)
@@ -39,7 +42,6 @@ function menuText(view, deps) {
 }
 
 function menuKeyboard(view = 'main', deps) {
-  const cfg = getConfig();
   const mark = (on) => (on ? '🟢 ' : '');
   const rows = [];
 
@@ -47,11 +49,6 @@ function menuKeyboard(view = 'main', deps) {
     rows.push([
       { text: `${mark(getActiveMode() === 'paper')}📝 paper`, callback_data: 'm:mode:paper' },
       { text: `${mark(getActiveMode() === 'live')}🔴 live`, callback_data: 'm:mode:live' },
-    ]);
-    rows.push([
-      { text: `${mark(cfg.activeChain === 'solana')}🟪 solana`, callback_data: 'm:chain:solana' },
-      { text: `${mark(cfg.activeChain === 'robinhood')}🟩 robinhood`, callback_data: 'm:chain:robinhood' },
-      { text: `${mark(cfg.activeChain === 'both')}both`, callback_data: 'm:chain:both' },
     ]);
     rows.push([
       { text: `${mark(!deps.isPaused())}▶️ auto-buy on`, callback_data: 'm:auto:on' },
@@ -154,9 +151,6 @@ export async function handleMenuCallback(q, data, bot, deps) {
       switchMode(arg);
       deps.applyMode();
       return editMenu('main', `Mode → ${arg}`);
-    case 'chain':
-      setPath('activeChain', arg);
-      return editMenu('main', `Chain → ${arg}`);
     case 'auto':
       deps.setPaused(arg === 'off');
       return editMenu('main', arg === 'off' ? 'Auto-buy dijeda' : 'Auto-buy aktif');

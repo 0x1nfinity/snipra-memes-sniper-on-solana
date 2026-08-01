@@ -81,24 +81,24 @@ export async function runEvolve(trigger = 'manual', deps) {
   }
 
   // ── susun notifikasi usulan ──
-  const parts = [`🧬 *Usulan evolusi* (${trigger}) — _tidak diterapkan otomatis_`];
+  const parts = [`🧬 Usulan Evolusi (${trigger}) — tidak diterapkan otomatis`];
   if (best) {
     parts.push(
-      `\n📊 *Darwin* — genome teruji terbaik \`${best.id}\`` +
+      `\n*Darwin* — genome teruji terbaik \`${best.id}\`` +
       ` (fitness ${darwin.fitness(best).toFixed(2)}, ${best.trades} trades, avg ${fmtPct(best.totalPnlPct / best.trades)})` +
       (darwinLines.length ? `\n${darwinLines.join('\n')}` : `\n  _(setara config saat ini)_`)
     );
   } else {
-    parts.push(`\n📊 *Darwin* — belum ada genome cukup teruji (butuh ≥ ${cfg.darwin.minTradesForFitness} trades/genome)`);
+    parts.push(`\n*Darwin* — belum ada genome cukup teruji (butuh ≥ ${cfg.darwin.minTradesForFitness} trades/genome)`);
   }
   if (llmLines.length || rationale) {
     parts.push(
-      `\n🧠 *LLM*` +
+      `\n*LLM*` +
       (llmLines.length ? `\n${llmLines.join('\n')}` : `\n  _(tanpa usulan angka)_`) +
       (rationale ? `\n  _${rationale}_` : '')
     );
   } else if (cfg.llm.enabled) {
-    parts.push(`\n🧠 *LLM* — tidak ada usulan`);
+    parts.push(`\n*LLM* — tidak ada usulan`);
   }
   parts.push(`\n_Terapkan manual bila setuju: /menu · /set · atau edit config.<mode>.json (hot-reload)._`);
 

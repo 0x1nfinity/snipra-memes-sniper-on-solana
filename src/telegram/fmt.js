@@ -1,22 +1,21 @@
-import { getConfig } from '../config.js';
 import { fmtUsd, fmtPct } from '../utils.js';
 
 // ===== helper kosmetik bersama untuk semua pesan Telegram =====
 
-const CHAIN_EMOJI = { solana: '🟪', robinhood: '🟩' };
+const CHAIN_EMOJI = { solana: '🟪' };
 
 export function chainEmoji(chainKey) {
   return CHAIN_EMOJI[chainKey] || '⛓';
 }
 
-/** header blok chain: ━━ 🟪 SOLANA ━━ */
+/** header blok chain: 🟪 SOLANA */
 export function chainHeader(chainKey) {
-  return `━━ ${chainEmoji(chainKey)} *${chainKey.toUpperCase()}* ━━`;
+  return `${chainEmoji(chainKey)} *${chainKey.toUpperCase()}*`;
 }
 
-/** simbol native chain: SOL / ETH */
-export function nativeSym(chainKey) {
-  return getConfig().chains[chainKey]?.type === 'solana' ? 'SOL' : 'ETH';
+/** simbol native chain: SOL */
+export function nativeSym() {
+  return 'SOL';
 }
 
 /** format angka native bertanda: +0.0123 SOL */
@@ -32,27 +31,27 @@ export function fmtHold(fromTs) {
   return `${(min / 1440).toFixed(1)}d`;
 }
 
-/** baris data pasar token: 💰 MC · 💧 Liq · 📊 Vol24 */
+/** baris data pasar token: MC · Liq · Vol24 (plain label, tanpa emoji dekoratif) */
 export function marketLine(c) {
-  return `💰 MC ${fmtUsd(c.marketCap)} · 💧 Liq ${fmtUsd(c.liquidityUsd)} · 📊 Vol24 ${fmtUsd(c.volume24h)}`;
+  return `MC ${fmtUsd(c.marketCap)} · Liq ${fmtUsd(c.liquidityUsd)} · Vol24 ${fmtUsd(c.volume24h)}`;
 }
 
-/** baris komunitas token: 👥 holders · ⏱ age (+opsional Δ harga) */
+/** baris komunitas token: holders · age (+opsional Δ harga) */
 export function communityLine(c, { withDelta = false } = {}) {
   const age = c.ageMinutes != null ? `${(c.ageMinutes / 60).toFixed(1)}h` : '?';
-  let line = `👥 ${c.holders ?? '?'} · ⏱ ${age}`;
-  if (withDelta) line += ` · Δ1h ${fmtPct(c.priceChange?.h1)} · Δ24h ${fmtPct(c.priceChange?.h24)}`;
+  let line = `Holders ${c.holders ?? '?'} · Age ${age}`;
+  if (withDelta) line += ` · 1h ${fmtPct(c.priceChange?.h1)} · 24h ${fmtPct(c.priceChange?.h24)}`;
   return line;
 }
 
-/** baris verdict LLM: 🧠 conf 0.7 · risk med — alasan (LLM = gate buy/skip, bukan sizer) */
+/** baris verdict LLM: LLM conf 0.7 risk med — alasan (LLM = gate buy/skip, bukan sizer) */
 export function llmLine(c) {
   const v = c.llmVerdict;
   if (!v) return null;
   if (v.confidence != null) {
-    return `🧠 conf ${v.confidence.toFixed(2)} · ${v.risk} — ${v.reason}`;
+    return `LLM conf ${v.confidence.toFixed(2)} ${v.risk} — ${v.reason}`;
   }
-  return `🧠 ${v.reason || ''}`;
+  return `LLM ${v.reason || ''}`;
 }
 
 /**

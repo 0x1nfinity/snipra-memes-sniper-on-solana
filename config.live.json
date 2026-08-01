@@ -1,8 +1,7 @@
 {
   "paper": {
     "startBalance": {
-      "solana": 10,
-      "robinhood": 1
+      "solana": 10
     }
   },
   "chains": {
@@ -14,20 +13,6 @@
       "buyAmount": 0.04,
       "executor": "jupiter",
       "priorityFee": "auto"
-    },
-    "robinhood": {
-      "enabled": true,
-      "type": "evm",
-      "dexscreenerId": "robinhood",
-      "gmgnSlug": "robinhood",
-      "chainIdNum": 4663,
-      "rpcEnv": "ROBINHOOD_RPC_URL",
-      "buyAmount": 0.04,
-      "weth": "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
-      "v3SwapRouter02": "0xcaf681a66d020601342297493863e78c959e5cb2",
-      "v3QuoterV2": "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
-      "v2Router": "0x89e5db8b5aa49aa85ac63f691524311aeb649eba",
-      "gasLimitSwap": 400000
     }
   },
   "screener": {
@@ -65,13 +50,15 @@
   },
   "trading": {
     "slippageBps": 50,
-    "maxPositions": 4,
-    "maxPerChain": 2,
+    "maxPositions": 2,
+    "maxPerChain": 1,
     "minSwapUsd": 1,
     "cooldownMinutes": 240,
     "stopLossPct": -20,
     "slFlashDropPct": 40,
-    "priceMinLiquidityUsd": 300
+    "priceMinLiquidityUsd": 300,
+    "priceAnomalySpikePct": 500,
+    "paperGas": { "solana": 0.000005 }
   },
   "tpLadder": [
     {
@@ -98,10 +85,11 @@
   },
   "llm": {
     "enabled": true,
-    "provider": "deepseek",
-    "model": "deepseek-v4-flash",
+    "provider": "openrouter",
+    "model": "minimax/minimax-m3",
     "gateBuy": true,
     "minConfidence": 0.35,
+    "failOpen": true,
     "maxLessons": 12,
     "tools": true
   },

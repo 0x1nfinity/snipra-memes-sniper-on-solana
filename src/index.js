@@ -10,9 +10,9 @@ import { LLM } from './llm/llm.js';
 import { Telegram } from './telegram/bot.js';
 import { runScreening } from './screener/screener.js';
 import { fmtUsd, fmtPct, tokenLink } from './utils.js';
-import { chainBlocks, marketLine, communityLine, llmLine } from './telegram/fmt.js';
+import { marketLine, communityLine } from './telegram/fmt.js';
 import { createLogger } from './logger.js';
-import { resolveCandidate, buyToken, sellToken } from './trade/helpers.js';
+import { resolveCandidate, buyToken, sellToken, effectiveMax } from './trade/helpers.js';
 import { runEvolve, onTradeClosed, setEvolveDeps } from './darwin/evolve.js';
 import { sendStatusReport, startStatusLoop, stopStatusLoop, setStatusDeps } from './telegram/reports.js';
 
@@ -55,8 +55,9 @@ function botContext() {
   const lastTrades = recentTrades(getActiveMode(), 5)
     .map((t) => `${t.symbol} ${(t.pnl_pct ?? 0).toFixed(1)}% (${t.close_reason})`)
     .join('; ') || '(belum ada)';
+  const enabledChains = Object.entries(cfg.chains).filter(([,c]) => c.enabled).map(([k]) => k).join(', ') || '(none)';
   return (
-    `mode=${getActiveMode()}, activeChain=${cfg.activeChain}, screening tiap ${cfg.screener.intervalSec}s, monitor tiap ${cfg.monitor.intervalSec}s\n` +
+    `mode=${getActiveMode()}, chains=${enabledChains}, screening tiap ${cfg.screener.intervalSec}s, monitor tiap ${cfg.monitor.intervalSec}s\n` +
     `Posisi terbuka (${openPositions().length}):\n${posBlock}\n` +
     `Statistik: ${s.totalTrades} trades, win rate ${s.winRatePct.toFixed(1)}%, avg PnL ${s.avgPnlPct.toFixed(1)}%\n` +
     `Trade terakhir: ${lastTrades}\n` +
@@ -89,11 +90,11 @@ const LLM_TOOL_DEFS = [
     type: 'function',
     function: {
       name: 'buy_token',
-      description: 'Beli token. Butuh chain dan address; amount opsional (native SOL/ETH).',
+      description: 'Beli token. Butuh chain dan address; amount opsional (native SOL).',
       parameters: {
         type: 'object',
         properties: {
-          chain: { type: 'string', enum: ['solana', 'robinhood'] },
+          chain: { type: 'string', enum: ['solana'] },
           address: { type: 'string' },
           amount: { type: 'number', description: 'jumlah native opsional; kosong = default buyAmount' },
         },
@@ -127,9 +128,7 @@ const LLM_TOOL_DEFS = [
 ];
 
 function inferChain(address) {
-  if (/^0x[a-fA-F0-9]{40}$/.test(address)) return 'robinhood';
-  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) return 'solana';
-  return null;
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address) ? 'solana' : null;
 }
 
 async function runLlmTool(name, args) {
@@ -176,6 +175,7 @@ const telegram = new Telegram({
   executor,
   darwin,
   llm,
+  positionManager,
   buyToken: (chain, addr, amt, source) => buyToken(chain, addr, amt, source || 'telegram-button', null, executor, onTradeClosed),
   sellToken: (addr, pct) => sellToken(addr, pct, executor, onTradeClosed),
   screenNow: () => screeningCycle(true), // screening + langsung buy yang lolos
@@ -190,7 +190,11 @@ const telegram = new Telegram({
   applyMode,
   // restart timer setelah interval diubah via /set (tanpa perlu restart bot)
   restartLoops,
-  setPaused: (v) => { paused = v; },
+  setPaused: (v) => {
+    paused = v;
+    if (v) stopStatusLoop();
+    else startStatusLoop();
+  },
   isPaused: () => paused,
   shutdown,
 });
@@ -211,42 +215,83 @@ setStatusDeps({
 
 /** force=true (dari /screen manual) tetap jalan walau auto-buy sedang paused */
 async function screeningCycle(force = false) {
-  if (screenBusy || (paused && !force)) return;
+  if (paused && !force) return;
+  if (screenBusy) {
+    log.info('screening di-skip: cycle sebelumnya masih berjalan');
+    return;
+  }
   screenBusy = true;
   try {
     const cfg = getConfig();
-    const { candidates, genomeId, scanned } = await runScreening({ darwin, llm });
+    const effMax = effectiveMax(cfg);
+
+    // BUG-B1: cek slot kosong SEBELUM screening — hemat rate limit & token LLM
+    const availSlots = effMax - openPositions().length;
+    if (!force && availSlots <= 0) {
+      log.info(`screening di-skip: posisi penuh (${openPositions().length}/${effMax})`);
+      if (cfg.telegram.notifyScreening) {
+        telegram.notify(
+          `⏭️ Screening — Dilewati\n\nPosisi penuh ${openPositions().length}/${effMax} — tidak ada slot kosong.`
+        );
+      }
+      return;
+    }
+
+    const { candidates, genomeId, scanned } = await runScreening({
+      darwin,
+      llm,
+      availSlots: availSlots > 0 ? availSlots : undefined,
+    });
     const bought = [];
+    const rejected = []; // BUG-A4: lacak alasan token tidak dibeli
+    const MAX_RETRIES = 2;
+    const RETRY_DELAY_MS = 2000;
     for (const c of candidates) {
       c.genomeId = genomeId;
-      try {
-        const pos = await buyToken(c.chain, c.address, undefined, 'screener', c, executor, onTradeClosed);
-        bought.push({ c, pos });
-      } catch (e) {
-        log.debug(`skip buy ${c.symbol}: ${e.message}`);
+      let lastError = null;
+      let boughtToken = false;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const pos = await buyToken(c.chain, c.address, undefined, 'screener', c, executor, onTradeClosed);
+          bought.push({ c, pos });
+          boughtToken = true;
+          if (attempt > 0) log.info(`retry #${attempt} berhasil utk ${c.symbol}`);
+          break;
+        } catch (e) {
+          lastError = e.message;
+          // Hanya retry utk error transient (RPC, network, slippage), bukan error permanen
+          const isTransient = /timeout|ECONN|EAI_|ENOTFOUND|ETIMEDOUT|nonce|underpriced|replacement|rate.?limit|429|503/i.test(e.message);
+          if (!isTransient || attempt >= MAX_RETRIES) break;
+          log.debug(`retry #${attempt + 1} utk ${c.symbol} dalam ${RETRY_DELAY_MS}ms: ${e.message}`);
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+        }
+      }
+      if (!boughtToken) {
+        rejected.push({ c, reason: lastError || 'gagal' });
+        log.debug(`skip buy ${c.symbol}: ${lastError}`);
       }
     }
-    // Notifikasi hasil screening SELALU dikirim (walau tidak ada yang lolos/dibeli),
-    // dikelompokkan per chain (bukan selang-seling)
+    // Notifikasi hasil screening — ringkas, tetap detail, spasi antar baris jelas
     if (cfg.telegram.notifyScreening) {
-      const boughtSet = new Set(bought.map((b) => `${b.c.chain}:${b.c.address}`));
       if (candidates.length === 0) {
-        telegram.notify(`🔍 *Screening* · ${scanned} token discan · tidak ada yang lolos filter`);
+        telegram.notify(`🔍 Screening — ${scanned} discan, tidak ada yang lolos filter`);
       } else {
-        const byChain = {};
-        for (const c of candidates) {
+        const lines = [];
+        lines.push(`🔍 Screening — ${scanned} discan, ${candidates.length} lolos, ${bought.length} dibeli, ${rejected.length} ditolak`);
+        lines.push('');
+        for (const { c } of bought) {
           const slug = cfg.chains[c.chain]?.gmgnSlug;
-          const isBought = boughtSet.has(`${c.chain}:${c.address}`);
-          const item =
-            `${isBought ? '✅' : '⏸'} ${tokenLink(c.symbol, slug, c.address)} — ${fmtUsd(c.priceUsd)}${isBought ? ' *(dibeli)*' : ''}\n` +
-            `   ${marketLine(c)}\n` +
-            `   ${communityLine(c)}` +
-            (llmLine(c) ? `\n   ${llmLine(c)}` : '');
-          (byChain[c.chain] ??= []).push(item);
+          lines.push(`✅ Beli ${tokenLink(c.symbol, slug, c.address)} — ${fmtUsd(c.priceUsd)}`);
+          lines.push(`   ${marketLine(c)}, ${communityLine(c)}`);
+          lines.push('');
         }
-        telegram.notify(
-          `🔍 *Screening* · ${candidates.length} lolos · ${bought.length} dibeli\n\n${chainBlocks(byChain)}`
-        );
+        for (const { c, reason } of rejected) {
+          const slug = cfg.chains[c.chain]?.gmgnSlug;
+          lines.push(`❌ Tolak ${tokenLink(c.symbol, slug, c.address)} — ${fmtUsd(c.priceUsd)}`);
+          lines.push(`   Alasan: ${reason}`);
+          lines.push('');
+        }
+        telegram.notify(lines.join('\n').trimEnd());
       }
     }
   } catch (e) {

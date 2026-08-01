@@ -32,39 +32,6 @@ function top10Pct(holders) {
 }
 
 /**
- * Security + holder data untuk token EVM.
- * Return { holders, honeypot, buyTaxPct, sellTaxPct, mintable, raw } atau null jika tak ada data.
- */
-export async function evmSecurity(chainIdNum, address) {
-  const key = `evm:${chainIdNum}:${address.toLowerCase()}`;
-  const hit = cached(key);
-  if (hit !== undefined) return hit;
-  try {
-    const res = await fetchJson(
-      `${BASE}/token_security/${chainIdNum}?contract_addresses=${address}`
-    );
-    const d = res?.result?.[address.toLowerCase()];
-    if (!d) return store(key, null);
-    return store(key, {
-      holders: d.holder_count != null ? Number(d.holder_count) : null,
-      top10Pct: top10Pct(d.holders),
-      honeypot:
-        d.is_honeypot === '1' ||
-        d.cannot_sell_all === '1' ||
-        d.transfer_pausable === '1',
-      buyTaxPct: d.buy_tax != null && d.buy_tax !== '' ? Number(d.buy_tax) * 100 : null,
-      sellTaxPct: d.sell_tax != null && d.sell_tax !== '' ? Number(d.sell_tax) * 100 : null,
-      mintable: d.is_mintable === '1',
-      openSource: d.is_open_source === '1',
-      raw: d,
-    });
-  } catch (e) {
-    log.warn(`evmSecurity ${address} gagal:`, e.message);
-    return null; // jangan cache error
-  }
-}
-
-/**
  * Security + holder data untuk token Solana.
  */
 export async function solanaSecurity(address) {
@@ -94,6 +61,5 @@ export async function solanaSecurity(address) {
 }
 
 export async function tokenSecurity(chainCfg, address) {
-  if (chainCfg.type === 'solana') return solanaSecurity(address);
-  return evmSecurity(chainCfg.chainIdNum, address);
+  return solanaSecurity(address);
 }

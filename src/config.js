@@ -46,9 +46,9 @@ export const DEFAULTS = {
   // 'live'  = transaksi on-chain sungguhan
   // Mode TIDAK disimpan di sini — dibaca dari data/.mode marker file.
   paper: {
-    // saldo virtual awal per chain, dalam NATIVE (SOL/ETH).
+    // saldo virtual awal per chain, dalam NATIVE (SOL).
     // Alternatif: startBalanceUsd (angka) utk konversi otomatis dari USD.
-    startBalance: { solana: 10, robinhood: 1 },
+    startBalance: { solana: 10 },
   },
   chains: {
     solana: {
@@ -59,20 +59,6 @@ export const DEFAULTS = {
       buyAmount: 0.3, // ukuran posisi PERSIS dalam SOL (satu-satunya kontrol ukuran)
       executor: 'jupiter', // 'jupiter' | 'gmgn'
       priorityFee: 'auto',
-    },
-    robinhood: {
-      enabled: true,
-      type: 'evm',
-      dexscreenerId: 'robinhood',
-      gmgnSlug: 'robinhood',
-      chainIdNum: 4663, // Robinhood Chain mainnet (Arbitrum Orbit, gas = ETH)
-      rpcEnv: 'ROBINHOOD_RPC_URL',
-      buyAmount: 0.01, // ukuran posisi PERSIS dalam ETH (satu-satunya kontrol ukuran)
-      weth: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73',
-      v3SwapRouter02: '0xcaf681a66d020601342297493863e78c959e5cb2',
-      v3QuoterV2: '0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7',
-      v2Router: '0x89e5db8b5aa49aa85ac63f691524311aeb649eba',
-      gasLimitSwap: 400000,
     },
   },
   screener: {
@@ -132,7 +118,7 @@ export const DEFAULTS = {
     // 0 = nonaktif, default 500% (6x). Untuk token meme baru bisa diset lebih tinggi.
     priceAnomalySpikePct: 500,
     // Biaya gas untuk paper mode (estimasi per swap)
-    paperGas: { solana: 0.000005, evm: 0.0001 },
+    paperGas: { solana: 0.000005 },
   },
   tpLadder: [
     // gainPct = target profit %, sellPct = % dari sisa posisi yang dijual
@@ -156,6 +142,9 @@ export const DEFAULTS = {
     // Token yang delisted/rug tidak akan punya harga DexScreener; posisi
     // dengan harga stale > threshold ini mungkin perlu pengecekan manual.
     stalePriceWarnSec: 600,
+    // Cek saldo on-chain tiap posisi paling sering sekali per N detik (safety net,
+    // menutup otomatis posisi yg sudah 0 saldo tapi masih tercatat terbuka). 0 = nonaktif.
+    onchainReconcileSec: 60,
   },
   darwin: {
     enabled: true,

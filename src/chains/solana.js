@@ -215,11 +215,19 @@ export class SolanaChain {
   async _confirm(txid, maxWaitMs = 60000) {
     const start = Date.now();
     while (Date.now() - start < maxWaitMs) {
-      const st = await this.connection.getSignatureStatuses([txid]);
-      const s = st?.value?.[0];
-      if (s?.confirmationStatus === 'confirmed' || s?.confirmationStatus === 'finalized') {
-        if (s.err) throw new Error(`tx ${txid} gagal on-chain: ${JSON.stringify(s.err)}`);
-        return true;
+      // Baca status RPC dibungkus try-catch: rate-limit/network blip di tengah polling
+      // TIDAK BOLEH menggagalkan confirm — tx bisa saja sudah sukses on-chain.
+      // Cukup log & lanjut poll ke iterasi berikutnya sampai maxWaitMs habis.
+      try {
+        const st = await this.connection.getSignatureStatuses([txid]);
+        const s = st?.value?.[0];
+        if (s?.confirmationStatus === 'confirmed' || s?.confirmationStatus === 'finalized') {
+          if (s.err) throw new Error(`tx ${txid} gagal on-chain: ${JSON.stringify(s.err)}`);
+          return true;
+        }
+      } catch (e) {
+        if (/gagal on-chain/.test(e.message)) throw e; // kegagalan on-chain nyata — lempar
+        log.debug(`getSignatureStatuses ${txid} gagal, retry: ${e.message}`);
       }
       await sleep(2000);
     }

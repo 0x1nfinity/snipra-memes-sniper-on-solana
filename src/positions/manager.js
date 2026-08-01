@@ -20,6 +20,7 @@ export class PositionManager {
     this.onTradeClosed = onTradeClosed || (() => {});
     this._timer = null;
     this._busy = false;
+    this._lastReconcileAt = 0;
   }
 
   start() {
@@ -27,31 +28,47 @@ export class PositionManager {
     this.stop();
     this._timer = setInterval(() => this.tick().catch((e) => log.error('tick error:', e.message)), intervalSec * 1000);
     log.info(`position monitor start (interval ${intervalSec}s)`);
-    // Safety net: deteksi posisi yg on-chain balance-nya sudah 0 (swap manual di luar bot, dll).
-    // Hanya dijalankan SEKALI saat startup — tidak setiap tick — agar tidak membebani RPC.
-    this._startupSafetyCheck().catch((e) => log.warn('startup safety check gagal:', e.message));
+    // Safety net: deteksi posisi yg on-chain balance-nya sudah 0 (swap manual di luar bot,
+    // atau sell() yang gagal konfirmasi walau swap sudah sukses on-chain). Jalan sekali saat
+    // startup, LALU berkala tiap tick (lihat _maybeReconcile, dibatasi monitor.onchainReconcileSec
+    // agar tidak membebani RPC).
+    this._reconcileAll().catch((e) => log.warn('startup safety check gagal:', e.message));
+    this._lastReconcileAt = Date.now();
   }
 
-  async _startupSafetyCheck() {
+  async _reconcileAll() {
     const positions = openPositions();
     if (positions.length === 0) return;
-    log.info(`startup safety check: memeriksa ${positions.length} posisi...`);
     for (const pos of positions) {
-      try {
-        const chain = this.executor.chain(pos.chain);
-        const bal = await chain.tokenBalance(pos.address);
-        const rawNum = typeof bal.raw === 'bigint' ? Number(bal.raw) : Number(bal.raw);
-        if (rawNum <= 0 && pos.remainingPct > 0) {
-          log.warn(`${pos.symbol}: on-chain balance 0 tapi posisi masih terbuka — auto-close (startup safety net)`);
-          const trade = closePosition(pos, { reason: 'auto-close: on-chain balance 0 (startup)', receivedNative: 0, txid: pos.lastSellTx || '' });
-          this.notify(
-            `⚠️ *AUTO-CLOSE (startup)*\n${this._link(pos)} · balance on-chain = 0\nPosisi ditutup otomatis — token mungkin sudah dijual di luar bot.`
-          );
-          this.onTradeClosed(trade);
-        }
-      } catch (e) {
-        log.debug(`startup balance check ${pos.symbol} dilewati: ${e.message}`);
+      await this._reconcilePosition(pos);
+    }
+  }
+
+  /** Jalankan _reconcileAll paling sering tiap monitor.onchainReconcileSec, dipanggil dari tick(). */
+  async _maybeReconcile() {
+    const sec = getConfig().monitor.onchainReconcileSec ?? 60;
+    if (sec <= 0) return;
+    if (Date.now() - this._lastReconcileAt < sec * 1000) return;
+    this._lastReconcileAt = Date.now();
+    await this._reconcileAll();
+  }
+
+  /** Cek saldo on-chain satu posisi; auto-close bila 0 tapi masih tercatat terbuka. */
+  async _reconcilePosition(pos) {
+    try {
+      const chain = this.executor.chain(pos.chain);
+      const bal = await chain.tokenBalance(pos.address);
+      const rawNum = typeof bal.raw === 'bigint' ? Number(bal.raw) : Number(bal.raw);
+      if (rawNum <= 0 && pos.remainingPct > 0) {
+        log.warn(`${pos.symbol}: on-chain balance 0 tapi posisi masih terbuka — auto-close (reconcile)`);
+        const trade = closePosition(pos, { reason: 'auto-close: on-chain balance 0 (reconcile)', receivedNative: 0, txid: pos.lastSellTx || '' });
+        this.notify(
+          `⚠️ Auto-close\n\n${this._link(pos)} — balance on-chain = 0, posisi ditutup otomatis (kemungkinan sudah dijual di luar bot)`
+        );
+        this.onTradeClosed(trade);
       }
+    } catch (e) {
+      log.debug(`reconcile ${pos.symbol} dilewati: ${e.message}`);
     }
   }
 
@@ -64,6 +81,7 @@ export class PositionManager {
     if (this._busy) return;
     this._busy = true;
     try {
+      await this._maybeReconcile();
       await this._refreshPrices();
       await this._applyRules();
     } finally {
@@ -165,7 +183,7 @@ export class PositionManager {
           if (sudden && !pos._slPending) {
             pos._slPending = { pnl, at: Date.now() };
             this.notify(
-              `⚠️ *STOP LOSS — TERTUNDA*\n${this._link(pos)} · PnL ${fmtPct(pnl)} (turun ${(pos._tickDropPct).toFixed(0)}% dalam 1 tick)\nDicek ulang tick berikutnya.`
+              `⚠️ Stop Loss — Tertunda\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}, turun ${(pos._tickDropPct).toFixed(0)}% dalam 1 tick\nDicek ulang tick berikutnya.`
             );
             continue;
           }
@@ -176,7 +194,7 @@ export class PositionManager {
         // Harga pulih di atas SL padahal tadi sempat pending → glitch/flash terkonfirmasi
         if (pos._slPending) {
           this.notify(
-            `✅ *STOP LOSS — DIBATALKAN*\n${this._link(pos)} · PnL pulih ke ${fmtPct(pnl)} (glitch/flash dump).`
+            `✅ Stop Loss — Dibatalkan\n\n${this._link(pos)} — PnL pulih ke ${fmtPct(pnl)} (kemungkinan glitch/flash dump)`
           );
           pos._slPending = null;
         }
@@ -196,7 +214,7 @@ export class PositionManager {
             txid: res.txid,
           });
           this.notify(
-            `🎯 *TAKE PROFIT — TIER ${i + 1}*\n${this._link(pos)} · PnL ${fmtPct(pnl)} · jual ${tier.sellPct}%\nSisa posisi ${pos.remainingPct.toFixed(1)}%\ntx: \`${res.txid}\``
+            `🎯 Take Profit — Tier ${i + 1}\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}, jual ${tier.sellPct}%\nSisa posisi: ${pos.remainingPct.toFixed(1)}%\n\ntx: \`${res.txid}\``
           );
           laddered = true;
           if (isLastTier || pos.remainingPct < 1) {
@@ -219,7 +237,7 @@ export class PositionManager {
           if (!pos.trailingActive && (postTp || peakGain >= tr.activateGainPct)) {
             pos.trailingActive = true;
             this.notify(
-              `📈 *TRAILING — AKTIF*\n${this._link(pos)} · peak ${fmtPct(peakGain)} · trail ${tr.trailPct}%${postTp ? ' (post-TP)' : ''}`
+              `📈 Trailing — Aktif\n\n${this._link(pos)} — peak ${fmtPct(peakGain)}, trail ${tr.trailPct}%${postTp ? ' (post-TP)' : ''}`
             );
           }
           if (pos.trailingActive) {
@@ -275,7 +293,7 @@ export class PositionManager {
     const pnl = currentPnlPct(pos);
     const trade = moveToMoonbag(pos, { reason: `${reason} → moonbag ${moonbagPct}%`, receivedNative: 0, txid: res.txid });
     this.notify(
-      `🌙 *MOONBAG*\n${this._link(pos)} · PnL ${fmtPct(pnl)} · ${moonbagPct}% posisi awal di-hold\nJual ${sellPctOfRemaining.toFixed(1)}% sisa\ntx: \`${res.txid}\``
+      `🌙 Moonbag\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}\n${moonbagPct}% posisi awal di-hold, jual ${sellPctOfRemaining.toFixed(1)}% sisa\n\ntx: \`${res.txid}\``
     );
     this.onTradeClosed(trade);
     return trade;
@@ -298,7 +316,7 @@ export class PositionManager {
   async _notifyClosed(pos, pnl, reason, txid) {
     const emoji = pnl >= 0 ? '✅' : '🔻';
     this.notify(
-      `${emoji} *CLOSE* · ${this._link(pos)}\nPnL ${fmtPct(pnl)} · ${fmtUsd(pos.entryPrice)} → ${fmtUsd(pos.currentPrice)}\n${reason}${txid ? `\ntx: \`${txid}\`` : ''}`
+      `${emoji} Closed\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}\n${fmtUsd(pos.entryPrice)} → ${fmtUsd(pos.currentPrice)} · ${reason}${txid ? `\n\ntx: \`${txid}\`` : ''}`
     );
   }
 }

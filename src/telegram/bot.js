@@ -8,7 +8,6 @@ import { createLogger } from '../logger.js';
 import { buildRegistry } from './commands/index.js';
 import { handleMenuCallback } from './commands/config.js';
 
-const EVM_ADDR_RE = /^0x[a-fA-F0-9]{40}$/;
 const SOL_ADDR_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 const log = createLogger('telegram');
@@ -79,11 +78,8 @@ export class Telegram {
       .catch((e) => log.warn('setMyCommands gagal:', e.message));
     log.info('telegram bot polling dimulai');
     const cfg = getConfig();
-    this.notify(
-      `🤖 *snipra v2 online* · ${getActiveMode() === 'paper' ? '📝 paper' : '🔴 LIVE'}\n` +
-      `Chain: ${Object.entries(cfg.chains).filter(([, c]) => c.enabled).map(([k]) => `${chainEmoji(k)} ${k}`).join(' · ')}\n` +
-      `Ketik /help untuk daftar perintah.`
-    );
+    const chains = Object.entries(cfg.chains).filter(([, c]) => c.enabled).map(([k]) => k).join(', ');
+    this.notify(`snipra online\n\nChain: ${chains}\nKetik /help untuk daftar perintah.`);
   }
 
   async stopPolling() {
@@ -164,11 +160,9 @@ export class Telegram {
   /** lookup contract address di semua chain aktif → kartu + tombol buy */
   async _lookupAddress(address) {
     const cfg = getConfig();
-    const isEvm = EVM_ADDR_RE.test(address);
     const found = [];
     for (const [key, chainCfg] of Object.entries(cfg.chains)) {
       if (!chainCfg.enabled) continue;
-      if (isEvm !== (chainCfg.type === 'evm')) continue;
       try {
         const pairs = await tokenPairs(chainCfg.dexscreenerId, address);
         const best = bestPair(pairs);
@@ -248,12 +242,14 @@ export class Telegram {
 
   /**
    * dipakai modul lain untuk push notifikasi (screening, buy, close, SL, status).
-   * SELALU diberi badge mode di baris pertama agar notif paper & live tidak pernah
-   * tertukar — sumber utama kebingungan "mode live tapi datanya paper".
+   * Badge mode digabung ke baris pertama (bukan baris terpisah) agar notif paper &
+   * live tidak pernah tertukar, tanpa menambah baris ekstra yang mepet.
    */
   notify(text) {
     const badge = getActiveMode() === 'live' ? '🔴 LIVE' : '📝 PAPER';
-    this._send(`${badge}\n${text}`).catch((e) => log.warn(`notify gagal: ${e.message}`));
+    const nl = text.indexOf('\n');
+    const merged = nl === -1 ? `${badge} · ${text}` : `${badge} · ${text.slice(0, nl)}${text.slice(nl)}`;
+    this._send(merged).catch((e) => log.warn(`notify gagal: ${e.message}`));
   }
 
   async _onMessage(msg) {
@@ -274,7 +270,7 @@ export class Telegram {
     if (cmd.startsWith('/')) return this._send(`Perintah tidak dikenal: ${cmd}\n/help untuk daftar.`);
     const text = msg.text.trim();
     // contract address → fetch data + tombol buy
-    if (EVM_ADDR_RE.test(text) || SOL_ADDR_RE.test(text)) {
+    if (SOL_ADDR_RE.test(text)) {
       await this._send('🔍 Mencari data token…');
       return this._lookupAddress(text);
     }

@@ -1,6 +1,5 @@
 import { getConfig, getActiveMode } from '../config.js';
 import { SolanaChain } from '../chains/solana.js';
-import { EvmChain } from '../chains/evm.js';
 import { PaperChain } from './paper.js';
 import { nativePriceUsd } from '../prices.js';
 import { deleteTrades, recentTrades } from '../db.js';
@@ -10,12 +9,12 @@ import { createLogger } from '../logger.js';
 const log = createLogger('executor');
 
 // Cadangan native yang tidak boleh dipakai buy di mode live (biaya gas/fee)
-const GAS_RESERVE = { solana: 0.01, evm: 0.0005 };
+const GAS_RESERVE = { solana: 0.01 };
 
 /**
- * Interface trading terpadu lintas chain + lintas mode.
+ * Interface trading terpadu lintas mode.
  * mode 'paper' → semua chain memakai PaperChain (saldo virtual, harga real).
- * mode 'live'  → SolanaChain (Jupiter/GMGN) & EvmChain (Uniswap) sungguhan.
+ * mode 'live'  → SolanaChain (Jupiter/GMGN) sungguhan.
  */
 export class Executor {
   constructor() {
@@ -31,16 +30,10 @@ export class Executor {
     for (const [key, c] of Object.entries(cfg.chains)) {
       if (!c.enabled) continue;
       try {
-        if (getActiveMode() === 'paper') {
-          this.chains.set(key, new PaperChain(key, c));
-        } else {
-          this.chains.set(
-            key,
-            c.type === 'solana'
-              ? new SolanaChain(c, { dryRun: false })
-              : new EvmChain(key, c, { dryRun: false })
-          );
-        }
+        this.chains.set(
+          key,
+          getActiveMode() === 'paper' ? new PaperChain(key, c) : new SolanaChain(c, { dryRun: false })
+        );
       } catch (e) {
         log.error(`init chain ${key} (${getActiveMode()}) gagal:`, e.message);
       }
@@ -94,7 +87,7 @@ export class Executor {
     }
 
     const balance = await chain.nativeBalance();
-    const reserve = getActiveMode() === 'live' ? (chainCfg.type === 'solana' ? GAS_RESERVE.solana : GAS_RESERVE.evm) : 0;
+    const reserve = getActiveMode() === 'live' ? GAS_RESERVE.solana : 0;
     if (balance - reserve < amount) {
       throw new Error(
         `saldo ${chainKey} tidak cukup: ${balance.toFixed(6)} native` +
@@ -128,7 +121,7 @@ export class Executor {
     const { openPositions } = await import('../positions/state.js');
     const openList = [...openPositions()];
     if (positionManager && openList.length > 0) {
-      notify?.(`♻️ *Paper reset* — menutup ${openList.length} posisi terbuka…`);
+      notify?.(`♻️ Paper reset — menutup ${openList.length} posisi terbuka…`);
       const results = await positionManager.closeAllPositions('paper reset');
       closedCount = results.filter((r) => !r.error).length;
       log.info(`paper reset: ${closedCount}/${openList.length} posisi ditutup`);
