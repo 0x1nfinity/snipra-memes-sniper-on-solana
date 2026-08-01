@@ -115,7 +115,8 @@ export class SolanaChain {
       skipPreflight: true,
       maxRetries: 3,
     });
-    await this._confirm(txid);
+    const confirmed = await this._confirm(txid);
+    if (!confirmed) throw new Error(`tx ${txid} not confirmed within timeout — treating swap as failed`);
     return { txid, outAmountRaw: BigInt(quote.outAmount), quote };
   }
 
@@ -149,6 +150,8 @@ export class SolanaChain {
     });
     const txid = sent?.data?.hash;
     if (!txid) throw new Error(`GMGN send failed: ${JSON.stringify(sent).slice(0, 200)}`);
+    const confirmed = await this._confirm(txid);
+    if (!confirmed) throw new Error(`tx ${txid} not confirmed within timeout — treating swap as failed`);
     return {
       txid,
       outAmountRaw: BigInt(route?.data?.quote?.outAmount || 0),
@@ -231,11 +234,15 @@ export class SolanaChain {
         const st = await this.connection.getSignatureStatuses([txid]);
         const s = st?.value?.[0];
         if (s?.confirmationStatus === 'confirmed' || s?.confirmationStatus === 'finalized') {
-          if (s.err) throw new Error(`tx ${txid} failed on-chain: ${JSON.stringify(s.err)}`);
+          if (s.err) {
+            const err = new Error(`tx ${txid} failed on-chain: ${JSON.stringify(s.err)}`);
+            err.onChainFailure = true; // kegagalan on-chain nyata (bukan RPC noise) — flag, bukan string-match
+            throw err;
+          }
           return true;
         }
       } catch (e) {
-        if (/gagal on-chain/.test(e.message)) throw e; // kegagalan on-chain nyata — lempar
+        if (e.onChainFailure) throw e; // kegagalan on-chain nyata — lempar
         log.debug(`getSignatureStatuses ${txid} gagal, retry: ${e.message}`);
       }
       await sleep(2000);
