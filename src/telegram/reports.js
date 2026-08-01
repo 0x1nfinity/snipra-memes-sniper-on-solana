@@ -51,19 +51,19 @@ export async function sendStatusReport(deps) {
           const pnl = currentPnlPct(p);
           return `  ${pnl >= 0 ? '🟢' : '🔴'} ${tokenLink(p.symbol, cfg.chains[chainKey]?.gmgnSlug, p.address)} ${fmtPct(pnl)} · ${fmtHold(p.openedAt)}`;
         }).join('\n')
-      : '  (tidak ada posisi terbuka)';
+      : '  (no open positions)';
     blocks.push(
       `${chainHeader(chainKey)}\n` +
-      `Saldo: ${b.error ? `⚠️ ${b.error}` : `${b.native.toFixed(4)} ${sym}`}\n` +
+      `Balance: ${b.error ? `⚠️ ${b.error}` : `${b.native.toFixed(4)} ${sym}`}\n` +
       `Unrealized: ${fmtNative(unrealized, chainKey)}\n` +
       `Realized: ${fmtNative(realized, chainKey)}${r ? ` (${r.total} closed)` : ''}\n\n` +
-      `Posisi (${chainPos.length}):\n${posLines}`
+      `Positions (${chainPos.length}):\n${posLines}`
     );
   }
   const effMax = effectiveMax(cfg);
   telegram.notify(
-    `📊 Laporan berkala\n\n` +
-    `Posisi ${openPositions().length}/${effMax} · Moonbag ${moonbags().length} · Auto-buy ${paused() ? 'off' : 'on'}\n\n` +
+    `📊 Periodic report\n\n` +
+    `Positions ${openPositions().length}/${effMax} · Moonbag ${moonbags().length} · Auto-buy ${paused() ? 'off' : 'on'}\n\n` +
     blocks.join('\n\n')
   );
 }

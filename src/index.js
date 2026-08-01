@@ -46,24 +46,24 @@ function botContext() {
   const s = statsSummary();
   const byChain = {};
   for (const p of openPositions()) {
-    (byChain[p.chain] ??= []).push(`${p.symbol} ${currentPnlPct(p).toFixed(1)}% (sisa ${p.remainingPct.toFixed(0)}%)`);
+    (byChain[p.chain] ??= []).push(`${p.symbol} ${currentPnlPct(p).toFixed(1)}% (remaining ${p.remainingPct.toFixed(0)}%)`);
   }
   const posBlock = Object.keys(byChain).sort()
     .map((k) => `${k.toUpperCase()}: ${byChain[k].join(', ')}`)
-    .join('\n') || '(tidak ada posisi terbuka)';
+    .join('\n') || '(no open positions)';
   const st = darwin.status();
   const lastTrades = recentTrades(getActiveMode(), 5)
     .map((t) => `${t.symbol} ${(t.pnl_pct ?? 0).toFixed(1)}% (${t.close_reason})`)
-    .join('; ') || '(belum ada)';
+    .join('; ') || '(none yet)';
   const enabledChains = Object.entries(cfg.chains).filter(([,c]) => c.enabled).map(([k]) => k).join(', ') || '(none)';
   return (
-    `mode=${getActiveMode()}, chains=${enabledChains}, screening tiap ${cfg.telegram.screeningcyclemin}m, monitor tiap ${cfg.monitor.intervalSec}s\n` +
-    `Posisi terbuka (${openPositions().length}):\n${posBlock}\n` +
-    `Statistik: ${s.totalTrades} trades, win rate ${s.winRatePct.toFixed(1)}%, avg PnL ${s.avgPnlPct.toFixed(1)}%\n` +
-    `Trade terakhir: ${lastTrades}\n` +
-    `Darwin: generasi ${st.generation}, genome terbaik ${st.genomes[0]?.id} (fitness ${st.genomes[0]?.fitness.toFixed(2)})\n` +
-    `Filter utama: ${JSON.stringify(cfg.screener.filters)}\n` +
-    `TP ladder: ${JSON.stringify(cfg.tpLadder)} | trailing: aktif ${cfg.trailing.activateGainPct}%, trail ${cfg.trailing.trailPct}% | SL ${cfg.trading.stopLossPct}%`
+    `mode=${getActiveMode()}, chains=${enabledChains}, screening every ${cfg.telegram.screeningcyclemin}m, monitor every ${cfg.monitor.intervalSec}s\n` +
+    `Open positions (${openPositions().length}):\n${posBlock}\n` +
+    `Stats: ${s.totalTrades} trades, win rate ${s.winRatePct.toFixed(1)}%, avg PnL ${s.avgPnlPct.toFixed(1)}%\n` +
+    `Last trades: ${lastTrades}\n` +
+    `Darwin: generation ${st.generation}, best genome ${st.genomes[0]?.id} (fitness ${st.genomes[0]?.fitness.toFixed(2)})\n` +
+    `Main filters: ${JSON.stringify(cfg.screener.filters)}\n` +
+    `TP ladder: ${JSON.stringify(cfg.tpLadder)} | trailing: activate ${cfg.trailing.activateGainPct}%, trail ${cfg.trailing.trailPct}% | SL ${cfg.trading.stopLossPct}%`
   );
 }
 
@@ -74,7 +74,7 @@ const LLM_TOOL_DEFS = [
     type: 'function',
     function: {
       name: 'get_positions',
-      description: 'Ambil daftar posisi terbuka + PnL + moonbag saat ini.',
+      description: 'Get the current list of open positions + PnL + moonbag.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -82,7 +82,7 @@ const LLM_TOOL_DEFS = [
     type: 'function',
     function: {
       name: 'screen_now',
-      description: 'Jalankan satu siklus screening sekarang dan langsung beli kandidat yang lolos.',
+      description: 'Run one screening cycle now and immediately buy candidates that pass.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -90,13 +90,13 @@ const LLM_TOOL_DEFS = [
     type: 'function',
     function: {
       name: 'buy_token',
-      description: 'Beli token. Butuh chain dan address; amount opsional (native SOL).',
+      description: 'Buy a token. Needs chain and address; amount optional (native SOL).',
       parameters: {
         type: 'object',
         properties: {
           chain: { type: 'string', enum: ['solana'] },
           address: { type: 'string' },
-          amount: { type: 'number', description: 'jumlah native opsional; kosong = default buyAmount' },
+          amount: { type: 'number', description: 'optional native amount; empty = default buyAmount' },
         },
         required: ['chain', 'address'],
       },
@@ -106,12 +106,12 @@ const LLM_TOOL_DEFS = [
     type: 'function',
     function: {
       name: 'sell_token',
-      description: 'Jual posisi/moonbag berdasarkan address token. pct default 100.',
+      description: 'Sell a position/moonbag by token address. pct defaults to 100.',
       parameters: {
         type: 'object',
         properties: {
           address: { type: 'string' },
-          pct: { type: 'number', description: 'persen holdings 1-100' },
+          pct: { type: 'number', description: 'percent of holdings 1-100' },
         },
         required: ['address'],
       },
@@ -121,7 +121,7 @@ const LLM_TOOL_DEFS = [
     type: 'function',
     function: {
       name: 'close_all_positions',
-      description: 'Tutup SEMUA posisi terbuka sekarang.',
+      description: 'Close ALL open positions now.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -142,11 +142,11 @@ async function runLlmTool(name, args) {
     }
     case 'screen_now': {
       await screeningCycle(true);
-      return { ok: true, note: 'screening dijalankan; hasil dikirim sebagai notifikasi terpisah' };
+      return { ok: true, note: 'screening triggered; results sent as a separate notification' };
     }
     case 'buy_token': {
       const chain = args.chain || inferChain(args.address);
-      if (!chain) return { error: 'chain tidak diketahui' };
+      if (!chain) return { error: 'unknown chain' };
       const pos = await buyToken(chain, args.address, args.amount, 'llm-tool', null, executor, onTradeClosed);
       return { ok: true, symbol: pos.symbol, chain, entryPrice: pos.entryPrice, tx: pos.txid };
     }
@@ -159,7 +159,7 @@ async function runLlmTool(name, args) {
       return { ok: true, closed: results.filter((r) => !r.error).length, results };
     }
     default:
-      return { error: `tool tidak dikenal: ${name}` };
+      return { error: `unknown tool: ${name}` };
   }
 }
 
@@ -231,7 +231,7 @@ async function screeningCycle(force = false) {
       log.info(`screening di-skip: posisi penuh (${openPositions().length}/${effMax})`);
       if (cfg.telegram.notifyScreening) {
         telegram.notify(
-          `⏭️ Screening — Dilewati\n\nPosisi penuh ${openPositions().length}/${effMax} — tidak ada slot kosong.`
+          `⏭️ Screening — Skipped\n\nPositions full ${openPositions().length}/${effMax} — no open slots.`
         );
       }
       return;
@@ -267,21 +267,21 @@ async function screeningCycle(force = false) {
         }
       }
       if (!boughtToken) {
-        rejected.push({ c, reason: lastError || 'gagal' });
+        rejected.push({ c, reason: lastError || 'failed' });
         log.debug(`skip buy ${c.symbol}: ${lastError}`);
       }
     }
     // Notifikasi hasil screening — ringkas, tetap detail, spasi antar baris jelas
     if (cfg.telegram.notifyScreening) {
       if (candidates.length === 0) {
-        telegram.notify(`🔍 Screening — ${scanned} discan, tidak ada yang lolos filter`);
+        telegram.notify(`🔍 Screening — ${scanned} scanned, none passed the filter`);
       } else {
         const lines = [];
-        lines.push(`🔍 Screening — ${scanned} discan, ${candidates.length} lolos, ${bought.length} dibeli, ${rejected.length} ditolak`);
+        lines.push(`🔍 Screening — ${scanned} scanned, ${candidates.length} passed, ${bought.length} bought, ${rejected.length} rejected`);
         lines.push('');
         for (const { c } of bought) {
           const slug = cfg.chains[c.chain]?.gmgnSlug;
-          lines.push(`✅ Beli ${tokenLink(c.symbol, slug, c.address)} — ${fmtUsd(c.priceUsd)}`);
+          lines.push(`✅ Bought ${tokenLink(c.symbol, slug, c.address)} — ${fmtUsd(c.priceUsd)}`);
           lines.push(`   ${marketLine(c)}, ${communityLine(c)}`);
           lines.push('');
         }
@@ -297,14 +297,14 @@ async function screeningCycle(force = false) {
           }));
           const shown = saldoLines.filter(Boolean);
           if (shown.length) {
-            lines.push(`Saldo tersisa: ${shown.join(' · ')}`);
+            lines.push(`Balance remaining: ${shown.join(' · ')}`);
             lines.push('');
           }
         }
         for (const { c, reason } of rejected) {
           const slug = cfg.chains[c.chain]?.gmgnSlug;
-          lines.push(`❌ Tolak ${tokenLink(c.symbol, slug, c.address)} — ${fmtUsd(c.priceUsd)}`);
-          lines.push(`   Alasan: ${reason}`);
+          lines.push(`❌ Rejected ${tokenLink(c.symbol, slug, c.address)} — ${fmtUsd(c.priceUsd)}`);
+          lines.push(`   Reason: ${reason}`);
           lines.push('');
         }
         telegram.notify(lines.join('\n').trimEnd());
@@ -365,7 +365,7 @@ log.info(`snipra v2 start | mode=${getActiveMode()} | chains: ${Object.entries(c
 
 if (process.argv.includes('--screen-once')) {
   const { candidates, scanned } = await runScreening({ darwin, llm });
-  console.log(`\nScan ${scanned} token, ${candidates.length} lolos filter:\n`);
+  console.log(`\nScanned ${scanned} tokens, ${candidates.length} passed filter:\n`);
   for (const c of candidates) {
     console.log(
       `  ${c.symbol.padEnd(12)} ${c.chain.padEnd(8)} mc=${fmtUsd(c.marketCap)} liq=${fmtUsd(c.liquidityUsd)} ` +

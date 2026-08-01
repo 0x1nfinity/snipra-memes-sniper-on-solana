@@ -51,7 +51,7 @@ export class Executor {
 
   chain(key) {
     const c = this.chains.get(key);
-    if (!c) throw new Error(`chain ${key} tidak aktif`);
+    if (!c) throw new Error(`chain ${key} not active`);
     return c;
   }
 
@@ -75,7 +75,7 @@ export class Executor {
           ? chainCfg.buyAmountUsd / px
           : 0;
     }
-    if (!amount || amount <= 0) throw new Error(`buyAmount ${chainKey} belum diset`);
+    if (!amount || amount <= 0) throw new Error(`buyAmount for ${chainKey} not set`);
     // Ukuran = buyAmount PERSIS dari config (tanpa floor native / skala score).
     // Hanya trading.minSwapUsd yang jadi pengaman terhadap swap bernilai debu.
     amount = Number(amount.toPrecision(6));
@@ -83,15 +83,15 @@ export class Executor {
     const usdValue = amount * px;
     const minSwap = cfg.trading.minSwapUsd ?? 0;
     if (usdValue < minSwap - 0.01) {
-      throw new Error(`nilai swap $${usdValue.toFixed(2)} < minimum $${minSwap}`);
+      throw new Error(`swap value $${usdValue.toFixed(2)} < minimum $${minSwap}`);
     }
 
     const balance = await chain.nativeBalance();
     const reserve = getActiveMode() === 'live' ? GAS_RESERVE.solana : 0;
     if (balance - reserve < amount) {
       throw new Error(
-        `saldo ${chainKey} tidak cukup: ${balance.toFixed(6)} native` +
-        `${reserve ? ` (cadangan gas ${reserve})` : ''} < butuh ${amount.toFixed(6)}`
+        `insufficient ${chainKey} balance: ${balance.toFixed(6)} native` +
+        `${reserve ? ` (gas reserve ${reserve})` : ''} < needs ${amount.toFixed(6)}`
       );
     }
 

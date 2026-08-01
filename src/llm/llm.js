@@ -54,9 +54,9 @@ export class LLM {
   async _completion(messages, { json = false, tools = null } = {}) {
     const cfg = getConfig().llm;
     const p = PROVIDERS[cfg.provider];
-    if (!p) throw new Error(`provider LLM tidak dikenal: ${cfg.provider}`);
+    if (!p) throw new Error(`unknown LLM provider: ${cfg.provider}`);
     const key = process.env[p.keyEnv];
-    if (!key) throw new Error(`${p.keyEnv} kosong`);
+    if (!key) throw new Error(`${p.keyEnv} is empty`);
 
     // provider deepseek: model openrouter-style ("vendor/model") tidak valid → fallback
     const model =
@@ -78,7 +78,7 @@ export class LLM {
     }, { timeoutMs: 45000, retries: 1 });
 
     const msg = res?.choices?.[0]?.message;
-    if (!msg) throw new Error(`respons LLM kosong: ${JSON.stringify(res).slice(0, 200)}`);
+    if (!msg) throw new Error(`empty LLM response: ${JSON.stringify(res).slice(0, 200)}`);
     return msg;
   }
 

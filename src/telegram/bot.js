@@ -12,31 +12,31 @@ const SOL_ADDR_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 const log = createLogger('telegram');
 
-// Didaftarkan otomatis ke Telegram saat start (setMyCommands) —
-// tidak perlu setting manual lewat BotFather.
+// Registered to Telegram automatically on start (setMyCommands) —
+// no manual BotFather setup needed.
 const COMMANDS = [
-  { command: 'status', description: 'Kondisi bot, mode, posisi & saldo' },
-  { command: 'positions', description: 'Posisi terbuka + PnL real-time' },
-  { command: 'stats', description: 'Win rate, avg PnL, trade terakhir' },
-  { command: 'screen', description: 'Screening sekarang + langsung buy yang lolos' },
+  { command: 'status', description: 'Bot status, mode, positions & balance' },
+  { command: 'positions', description: 'Open positions + real-time PnL' },
+  { command: 'stats', description: 'Win rate, avg PnL, last trades' },
+  { command: 'screen', description: 'Screen now + immediately buy candidates that pass' },
   { command: 'buy', description: 'Buy manual: /buy <chain> <address> [amount]' },
-  { command: 'sell', description: 'Sell posisi: /sell <address> [pct]' },
-  { command: 'closeall', description: 'Tutup SEMUA posisi terbuka sekarang' },
-  { command: 'menu', description: 'Panel tombol pengaturan cepat' },
-  { command: 'papertrades', description: 'Riwayat papertest dari database' },
-  { command: 'paperreset', description: 'Reset saldo virtual paper' },
-  { command: 'pause', description: 'Jeda auto-buy (monitor tetap jalan)' },
-  { command: 'resume', description: 'Lanjutkan auto-buy' },
-  { command: 'mode', description: 'Ganti mode: /mode paper|live' },
-  { command: 'config', description: 'Tampilkan seluruh konfigurasi' },
-  { command: 'get', description: 'Lihat satu nilai config: /get <path>' },
-  { command: 'set', description: 'Ubah config: /set <path> <value>' },
-  { command: 'darwin', description: 'Status evolusi genome screening' },
-  { command: 'evolve', description: 'Analisa Darwin + LLM → usulan filter (tidak auto-apply)' },
-  { command: 'lessons', description: 'Lessons hasil analisis LLM' },
-  { command: 'logs', description: 'Log terakhir bot' },
-  { command: 'help', description: 'Daftar perintah lengkap' },
-  { command: 'stop', description: 'Matikan bot' },
+  { command: 'sell', description: 'Sell a position: /sell <address> [pct]' },
+  { command: 'closeall', description: 'Close ALL open positions now' },
+  { command: 'menu', description: 'Quick settings button panel' },
+  { command: 'papertrades', description: 'Papertest history from the database' },
+  { command: 'paperreset', description: 'Reset virtual paper balance' },
+  { command: 'pause', description: 'Pause auto-buy (monitoring keeps running)' },
+  { command: 'resume', description: 'Resume auto-buy' },
+  { command: 'mode', description: 'Switch mode: /mode paper|live' },
+  { command: 'config', description: 'Show the full configuration' },
+  { command: 'get', description: 'View a single config value: /get <path>' },
+  { command: 'set', description: 'Change config: /set <path> <value>' },
+  { command: 'darwin', description: 'Screening genome evolution status' },
+  { command: 'evolve', description: 'Darwin + LLM analysis → proposed filters (not auto-applied)' },
+  { command: 'lessons', description: 'Lessons from LLM analysis' },
+  { command: 'logs', description: 'Recent bot logs' },
+  { command: 'help', description: 'Full command list' },
+  { command: 'stop', description: 'Shut down the bot' },
 ];
 
 export class Telegram {
@@ -79,7 +79,7 @@ export class Telegram {
     log.info('telegram bot polling dimulai');
     const cfg = getConfig();
     const chains = Object.entries(cfg.chains).filter(([, c]) => c.enabled).map(([k]) => k).join(', ');
-    this.notify(`snipra online\n\nChain: ${chains}\nKetik /help untuk daftar perintah.`);
+    this.notify(`snipra online\n\nChain: ${chains}\nType /help for the command list.`);
   }
 
   async stopPolling() {
@@ -132,7 +132,7 @@ export class Telegram {
 
   /** kartu info token utk lookup CA / hasil pencarian nama */
   _tokenCard(c) {
-    const guardTag = (c.priceChange?.h1 ?? 0) > 150 || (c.priceChange?.h24 ?? 0) > 400 ? '\n⚠️ *sedang pump — entry guard aktif*' : '';
+    const guardTag = (c.priceChange?.h1 ?? 0) > 150 || (c.priceChange?.h24 ?? 0) > 400 ? '\n⚠️ *pumping right now — entry guard active*' : '';
     return (
       `${chainEmoji(c.chain)} ${tokenLink(c.symbol, this._chainSlug(c.chain), c.address)} — ${c.name || ''} (${c.chain})${guardTag}\n\n` +
       `💵 ${fmtUsd(c.priceUsd)} · ${marketLine(c)}\n` +
@@ -174,7 +174,7 @@ export class Telegram {
         }
       } catch { /* chain ini tidak punya token tsb */ }
     }
-    if (found.length === 0) return this._send(`Token \`${address}\` tidak ditemukan di chain aktif.`);
+    if (found.length === 0) return this._send(`Token \`${address}\` not found on any active chain.`);
     for (const c of found) {
       await this._send(this._tokenCard(c), this._buyKeyboard(c.chain, c.address));
     }
@@ -201,9 +201,9 @@ export class Telegram {
     const top = [...byToken.values()]
       .sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))
       .slice(0, 3);
-    if (top.length === 0) return this._send(`Tidak ada token "${query}" di chain aktif.`);
+    if (top.length === 0) return this._send(`No token "${query}" found on any active chain.`);
 
-    await this._send(`🔎 *Hasil pencarian "${query}"* (${top.length} terbaik):`);
+    await this._send(`🔎 *Search results for "${query}"* (top ${top.length}):`);
     for (const p of top) {
       const c = normalizePair(p, chainMap[p.chainId]);
       const sec = await tokenSecurity(cfg.chains[c.chain], c.address).catch(() => null);
@@ -225,7 +225,7 @@ export class Telegram {
     }
     if (data.startsWith('buy:')) {
       const [, chain, address] = data.split(':');
-      await this.bot.answerCallbackQuery(q.id, { text: 'Membeli…' });
+      await this.bot.answerCallbackQuery(q.id, { text: 'Buying…' });
       try {
         const pos = await this.deps.buyToken(chain, address, undefined, 'telegram-button');
         await this.bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
@@ -235,7 +235,7 @@ export class Telegram {
           `✅ BUY ${tokenLink(pos.symbol, this._chainSlug(chain), address)} @ ${fmtUsd(pos.entryPrice)}\ntx: \`${pos.txid}\``
         );
       } catch (e) {
-        await this._send(`⚠️ Buy gagal: ${e.message}`);
+        await this._send(`⚠️ Buy failed: ${e.message}`);
       }
     }
   }
@@ -267,7 +267,7 @@ export class Telegram {
     }
 
     // Not a registered command — fallthrough to address lookup / name search / LLM chat
-    if (cmd.startsWith('/')) return this._send(`Perintah tidak dikenal: ${cmd}\n/help untuk daftar.`);
+    if (cmd.startsWith('/')) return this._send(`Unknown command: ${cmd}\n/help for the list.`);
     const text = msg.text.trim();
     // contract address → fetch data + tombol buy
     if (SOL_ADDR_RE.test(text)) {
@@ -287,8 +287,8 @@ export class Telegram {
       return this._send(reply);
     }
     return this._send(
-      'LLM chat nonaktif. Aktifkan dengan `/set llm.enabled true` (butuh OPENROUTER_API_KEY / DEEPSEEK_API_KEY).\n' +
-      'Atau kirim 1-2 kata untuk mencari token, /help untuk perintah.'
+      'LLM chat is disabled. Enable it with `/set llm.enabled true` (requires OPENROUTER_API_KEY / DEEPSEEK_API_KEY).\n' +
+      'Or send 1-2 words to search for a token, /help for commands.'
     );
   }
 }

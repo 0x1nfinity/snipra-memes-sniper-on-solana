@@ -33,13 +33,13 @@ function menuText(view, deps) {
     .filter(([, c]) => c.enabled)
     .map(([k]) => k)
     .join(', ');
-  const head = view === 'filter' ? '🎛 *Menu · Filter Screening*' : '🎛 *Menu Pengaturan*';
+  const head = view === 'filter' ? '🎛 *Menu · Screening Filter*' : '🎛 *Settings Menu*';
   return (
     `${head}\n` +
     `Mode: ${getActiveMode() === 'paper' ? '📝 paper' : '🔴 LIVE'} · Chain: ${enabledChains || '(none)'} · Auto-buy: ${deps.isPaused() ? '⏸ off' : '▶️ on'}\n` +
     (view === 'filter'
-      ? `Atur hard filter. LLM/Darwin via /set.`
-      : `Tombol di bawah. Filter screening → 🔧, teknis via /set.`)
+      ? `Adjust hard filters. LLM/Darwin via /set.`
+      : `Buttons below. Screening filters → 🔧, technical settings via /set.`)
   );
 }
 
@@ -69,11 +69,11 @@ function menuKeyboard(view = 'main', deps) {
 
   rows.push(
     view === 'filter'
-      ? [{ text: '⬅ Kembali', callback_data: 'm:view:main' }, { text: '✖ Tutup', callback_data: 'm:close' }]
-      : [{ text: '🔧 Filter screening', callback_data: 'm:view:filter' }]
+      ? [{ text: '⬅ Back', callback_data: 'm:view:main' }, { text: '✖ Close', callback_data: 'm:close' }]
+      : [{ text: '🔧 Screening filters', callback_data: 'm:view:filter' }]
   );
   if (view === 'main') {
-    rows.push([{ text: '🔄 Refresh', callback_data: 'm:refresh' }, { text: '✖ Tutup', callback_data: 'm:close' }]);
+    rows.push([{ text: '🔄 Refresh', callback_data: 'm:refresh' }, { text: '✖ Close', callback_data: 'm:close' }]);
   }
   return { reply_markup: { inline_keyboard: rows } };
 }
@@ -95,7 +95,7 @@ export async function set(args, msg, deps) {
   // Mode switching uses dedicated switchMode() — not setPath
   if (path === 'mode') {
     const m = args.slice(1).join(' ').toLowerCase();
-    if (m !== 'paper' && m !== 'live') return deps.send('Mode harus `paper` atau `live`.');
+    if (m !== 'paper' && m !== 'live') return deps.send('Mode must be `paper` or `live`.');
     switchMode(m);
     deps.applyMode();
     return deps.send(`✅ Mode → \`${m}\``);
@@ -104,7 +104,7 @@ export async function set(args, msg, deps) {
   // interval screening/monitor/laporan langsung diterapkan tanpa restart bot
   if (['telegram.screeningcyclemin', 'monitor.intervalSec', 'telegram.managecyclemin'].includes(path)) {
     deps.restartLoops();
-    return deps.send(`✅ \`${path}\` = \`${JSON.stringify(value)}\` — timer di-restart, langsung aktif.`);
+    return deps.send(`✅ \`${path}\` = \`${JSON.stringify(value)}\` — timer restarted, now active.`);
   }
   return deps.send(`✅ \`${path}\` = \`${JSON.stringify(value)}\``);
 }
@@ -116,8 +116,8 @@ export async function mode(args, msg, deps) {
   deps.applyMode();
   return deps.send(
     m === 'paper'
-      ? '📝 Mode PAPER — trade simulasi, saldo virtual, PnL tetap dicatat ke database.'
-      : '🔴 *MODE LIVE* — transaksi on-chain sungguhan dengan saldo asli!'
+      ? '📝 PAPER mode — simulated trades, virtual balance, PnL still logged to the database.'
+      : '🔴 *LIVE MODE* — real on-chain transactions with real funds!'
   );
 }
 
@@ -143,9 +143,9 @@ export async function handleMenuCallback(q, data, bot, deps) {
     case 'view':
       return editMenu(arg);
     case 'refresh':
-      return editMenu('main', 'Diperbarui');
+      return editMenu('main', 'Refreshed');
     case 'close':
-      await bot.answerCallbackQuery(q.id, { text: 'Ditutup' }).catch(() => {});
+      await bot.answerCallbackQuery(q.id, { text: 'Closed' }).catch(() => {});
       return bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
         chat_id: q.message.chat.id, message_id: q.message.message_id,
       }).catch(() => {});
@@ -155,7 +155,7 @@ export async function handleMenuCallback(q, data, bot, deps) {
       return editMenu('main', `Mode → ${arg}`);
     case 'auto':
       deps.setPaused(arg === 'off');
-      return editMenu('main', arg === 'off' ? 'Auto-buy dijeda' : 'Auto-buy aktif');
+      return editMenu('main', arg === 'off' ? 'Auto-buy paused' : 'Auto-buy active');
     case 'inc':
     case 'dec': {
       const m = MENU_NUM[arg];

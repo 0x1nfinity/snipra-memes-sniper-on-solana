@@ -87,13 +87,13 @@ export class SolanaChain {
       instructionVersion: 'V2', // wajib utk kutip fee di token Token-2022 (custom 6014 kalau tak ada)
     });
     const quote = await fetchJson(`${base}/quote?${q}`, { headers: this._jupHeaders() });
-    if (!quote?.outAmount) throw new Error(`Jupiter quote gagal: ${JSON.stringify(quote).slice(0, 200)}`);
+    if (!quote?.outAmount) throw new Error(`Jupiter quote failed: ${JSON.stringify(quote).slice(0, 200)}`);
 
     if (this.dryRun) {
       log.info(`[DRY] jupiter swap ${inputMint.slice(0, 4)}→${outputMint.slice(0, 4)} out=${quote.outAmount}`);
       return { txid: `dry-${Date.now()}`, outAmountRaw: BigInt(quote.outAmount), quote };
     }
-    if (!this.wallet) throw new Error('wallet Solana belum diset');
+    if (!this.wallet) throw new Error('Solana wallet not set');
 
     const swapRes = await fetchJson(`${base}/swap`, {
       method: 'POST',
@@ -107,7 +107,7 @@ export class SolanaChain {
         feeAccount: JUP_FEE_ACCOUNT,
       }),
     });
-    if (!swapRes?.swapTransaction) throw new Error(`Jupiter swap build gagal: ${JSON.stringify(swapRes).slice(0, 200)}`);
+    if (!swapRes?.swapTransaction) throw new Error(`Jupiter swap build failed: ${JSON.stringify(swapRes).slice(0, 200)}`);
 
     const tx = VersionedTransaction.deserialize(Buffer.from(swapRes.swapTransaction, 'base64'));
     tx.sign([this.wallet]);
@@ -120,7 +120,7 @@ export class SolanaChain {
   }
 
   async _gmgnSwap(inputMint, outputMint, rawAmount, slippageBps) {
-    if (!process.env.GMGN_API_KEY) throw new Error('GMGN_API_KEY kosong');
+    if (!process.env.GMGN_API_KEY) throw new Error('GMGN_API_KEY is empty');
     const q = new URLSearchParams({
       token_in_address: inputMint,
       token_out_address: outputMint,
@@ -132,7 +132,7 @@ export class SolanaChain {
       headers: { 'x-route-key': process.env.GMGN_API_KEY },
     });
     const rawTx = route?.data?.raw_tx?.swapTransaction;
-    if (!rawTx) throw new Error(`GMGN route gagal: ${JSON.stringify(route).slice(0, 200)}`);
+    if (!rawTx) throw new Error(`GMGN route failed: ${JSON.stringify(route).slice(0, 200)}`);
 
     if (this.dryRun) {
       log.info(`[DRY] gmgn swap ${inputMint.slice(0, 4)}→${outputMint.slice(0, 4)}`);
@@ -148,7 +148,7 @@ export class SolanaChain {
       body: JSON.stringify({ chain: 'sol', signedTx: signed }),
     });
     const txid = sent?.data?.hash;
-    if (!txid) throw new Error(`GMGN send gagal: ${JSON.stringify(sent).slice(0, 200)}`);
+    if (!txid) throw new Error(`GMGN send failed: ${JSON.stringify(sent).slice(0, 200)}`);
     return {
       txid,
       outAmountRaw: BigInt(route?.data?.quote?.outAmount || 0),
@@ -231,7 +231,7 @@ export class SolanaChain {
         const st = await this.connection.getSignatureStatuses([txid]);
         const s = st?.value?.[0];
         if (s?.confirmationStatus === 'confirmed' || s?.confirmationStatus === 'finalized') {
-          if (s.err) throw new Error(`tx ${txid} gagal on-chain: ${JSON.stringify(s.err)}`);
+          if (s.err) throw new Error(`tx ${txid} failed on-chain: ${JSON.stringify(s.err)}`);
           return true;
         }
       } catch (e) {

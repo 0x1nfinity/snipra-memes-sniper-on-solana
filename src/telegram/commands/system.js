@@ -5,41 +5,41 @@ import { recentLogs } from '../../logger.js';
 
 const HELP = `*snipra v2 — multi-chain meme sniper*
 
-*Kontrol*
-/menu — panel tombol pengaturan cepat
-/status — kondisi bot & saldo
-/pause — stop auto-buy (monitor tetap jalan)
-/resume — lanjut auto-buy
-/mode paper|live — papertest vs on-chain sungguhan
-/stop — matikan bot
+*Controls*
+/menu — quick settings button panel
+/status — bot status & balance
+/pause — stop auto-buy (monitoring keeps running)
+/resume — resume auto-buy
+/mode paper|live — papertest vs real on-chain
+/stop — shut down the bot
 
-*Konfigurasi*
-/config — lihat semua config
-/get <path> — lihat satu nilai
-/set <path> <value> — ubah config
-  contoh: \`/set screener.filters.minLiquidityUsd 30000\`
-  contoh: \`/set tpLadder [{"gainPct":50,"sellPct":30}]\`
+*Configuration*
+/config — view full config
+/get <path> — view a single value
+/set <path> <value> — change config
+  example: \`/set screener.filters.minLiquidityUsd 30000\`
+  example: \`/set tpLadder [{"gainPct":50,"sellPct":30}]\`
 
 *Trading*
-/screen — screening sekarang + langsung buy yang lolos
-/buy <chain> <address> [amount] — buy manual
-/sell <address> [pct] — sell posisi (default 100%)
-/closeall — tutup semua posisi terbuka
-/positions — posisi terbuka + PnL
-/stats — statistik trading
-/papertrades — riwayat paper trade dari database
-/paperreset — reset saldo virtual ke awal
+/screen — screen now + immediately buy candidates that pass
+/buy <chain> <address> [amount] — manual buy
+/sell <address> [pct] — sell a position (default 100%)
+/closeall — close all open positions
+/positions — open positions + PnL
+/stats — trading stats
+/papertrades — paper trade history from the database
+/paperreset — reset virtual balance to starting value
 
 *Darwin & LLM*
-/darwin — status evolusi genome
-/evolve — paksa evolusi sekarang
-/lessons — lessons dari LLM
-/logs — log terakhir
+/darwin — genome evolution status
+/evolve — force evolution now
+/lessons — lessons from the LLM
+/logs — recent logs
 
-*Tanpa command:*
-• kirim *contract address* → data token + tombol Buy
-• kirim *nama token* (1-2 kata) → 3 hasil terbaik + tombol Buy
-• kirim *kalimat/pertanyaan* → dijawab LLM dengan data realtime bot`;
+*Without a command:*
+• send a *contract address* → token data + Buy button
+• send a *token name* (1-2 words) → top 3 results + Buy button
+• send a *sentence/question* → answered by the LLM with the bot's realtime data`;
 
 export async function help(args, msg, deps) {
   return deps.send(HELP);
@@ -52,14 +52,14 @@ export async function logs(args, msg, deps) {
 }
 
 export async function stop(args, msg, deps) {
-  await deps.send('🛑 Bot dimatikan.');
+  await deps.send('🛑 Bot shut down.');
   return deps.shutdown('telegram /stop');
 }
 
 export async function papertrades(args, msg, deps) {
   const rows = recentTrades('paper', 10);
   const s = tradeStats('paper');
-  if (!s || s.total === 0) return deps.send('Belum ada paper trade yang close.');
+  if (!s || s.total === 0) return deps.send('No paper trades closed yet.');
   const byChain = {};
   for (const t of rows) {
     const held = t.hold_minutes >= 60 ? `${(t.hold_minutes / 60).toFixed(1)}h` : `${Math.round(t.hold_minutes)}m`;
@@ -82,11 +82,11 @@ export async function paperreset(args, msg, deps) {
   });
   const lines = Object.entries(balances).map(([k, v]) => `${chainEmoji(k)} ${k}: ${v} ${nativeSym(k)}`);
   const extra = [];
-  if (closedCount > 0) extra.push(`${closedCount} posisi ditutup`);
-  if (lessonsDerived > 0) extra.push(`${lessonsDerived} lessons disimpan`);
+  if (closedCount > 0) extra.push(`${closedCount} positions closed`);
+  if (lessonsDerived > 0) extra.push(`${lessonsDerived} lessons saved`);
   return deps.send(
-    `♻️ *Paper direset*\n${lines.join('\n')}\n` +
-    `📊 Realized PnL → *0* · ${tradesDeleted} trade paper dihapus` +
+    `♻️ *Paper reset*\n${lines.join('\n')}\n` +
+    `📊 Realized PnL → *0* · ${tradesDeleted} paper trades deleted` +
     (extra.length ? `\n_(${extra.join(', ')})_` : '')
   );
 }

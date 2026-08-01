@@ -64,7 +64,7 @@ export class PositionManager {
         const trade = closePosition(pos, { reason: 'auto-close: on-chain balance 0 (reconcile)', receivedNative: 0, txid: pos.lastSellTx || '' });
         const saldo = await this._saldo(pos.chain);
         this.notify(
-          `⚠️ Auto-close\n\n${this._link(pos)} — balance on-chain = 0, kemungkinan sudah dijual di luar bot\nSaldo: ${saldo}`
+          `⚠️ Auto-close\n\n${this._link(pos)} — balance on-chain = 0, likely sold outside the bot\nBalance: ${saldo}`
         );
         this.onTradeClosed(trade);
       }
@@ -295,7 +295,7 @@ export class PositionManager {
     const trade = moveToMoonbag(pos, { reason: `${reason} → moonbag ${moonbagPct}%`, receivedNative: 0, txid: res.txid });
     const saldo = await this._saldo(pos.chain);
     this.notify(
-      `🌙 Moonbag\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}\n${moonbagPct}% posisi awal di-hold, jual ${sellPctOfRemaining.toFixed(1)}% sisa\nSaldo: ${saldo}`
+      `🌙 Moonbag\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}\n${moonbagPct}% of original position held, sold ${sellPctOfRemaining.toFixed(1)}% of remainder\nBalance: ${saldo}`
     );
     this.onTradeClosed(trade);
     return trade;
@@ -328,7 +328,7 @@ export class PositionManager {
     const emoji = pnl >= 0 ? '✅' : '🔻';
     const saldo = await this._saldo(pos.chain);
     this.notify(
-      `${emoji} Closed\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}\n${fmtUsd(pos.entryPrice)} → ${fmtUsd(pos.currentPrice)} · ${reason}\nSaldo: ${saldo}`
+      `${emoji} Closed\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}\n${fmtUsd(pos.entryPrice)} → ${fmtUsd(pos.currentPrice)} · ${reason}\nBalance: ${saldo}`
     );
   }
 }

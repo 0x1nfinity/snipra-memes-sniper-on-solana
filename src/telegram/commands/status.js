@@ -13,9 +13,9 @@ export async function status(args, msg, deps) {
   );
   return deps.send(
     `⚙️ *Status* · ${getActiveMode() === 'paper' ? '📝 paper' : '🔴 LIVE'}\n\n` +
-    `Auto-buy ${deps.isPaused() ? '⏸ paused' : '▶️ aktif'} · Posisi ${openPositions().length}/${effMax} · Moonbag ${moonbags().length}\n` +
+    `Auto-buy ${deps.isPaused() ? '⏸ paused' : '▶️ active'} · Positions ${openPositions().length}/${effMax} · Moonbag ${moonbags().length}\n` +
     `🧠 LLM ${cfg.llm.enabled ? cfg.llm.provider : 'off'} · 🧬 Darwin ${cfg.darwin.enabled ? 'on' : 'off'}\n\n` +
-    `*Saldo${getActiveMode() === 'paper' ? ' (virtual)' : ''}*\n${lines.join('\n')}`
+    `*Balance${getActiveMode() === 'paper' ? ' (virtual)' : ''}*\n${lines.join('\n')}`
   );
 }
 
@@ -24,7 +24,7 @@ export async function positions(args, msg, deps) {
   const onEnabled = (x) => cfg.chains[x.chain]?.enabled;
   const list = openPositions().filter(onEnabled);
   const moons = moonbags().filter(onEnabled);
-  if (list.length === 0 && moons.length === 0) return deps.send('Tidak ada posisi terbuka.');
+  if (list.length === 0 && moons.length === 0) return deps.send('No open positions.');
   const byChain = {};
   for (const p of list) {
     const pnl = currentPnlPct(p);
@@ -32,17 +32,17 @@ export async function positions(args, msg, deps) {
     const item =
       `${pnl >= 0 ? '🟢' : '🔴'} ${tokenLink(p.symbol, deps.chainSlug(p.chain), p.address)} *${fmtPct(pnl)}* · ⏱ ${fmtHold(p.openedAt)}\n` +
       `   ${fmtUsd(p.entryPrice)} → ${fmtUsd(p.currentPrice)} · peak ${fmtPct(peak)}\n` +
-      `   sisa ${p.remainingPct.toFixed(0)}% · TP ${p.tpHit.length} · trailing ${p.trailingActive ? 'on' : 'off'}\n` +
+      `   remaining ${p.remainingPct.toFixed(0)}% · TP ${p.tpHit.length} · trailing ${p.trailingActive ? 'on' : 'off'}\n` +
       `   \`${p.address}\``;
     (byChain[p.chain] ??= []).push(item);
   }
-  let msgText = `📋 *Posisi (${list.length})*\n\n${chainBlocks(byChain)}`;
+  let msgText = `📋 *Positions (${list.length})*\n\n${chainBlocks(byChain)}`;
   if (moons.length > 0) {
     const moonLines = moons.map((m) => {
       const pnl = m.entryPrice > 0 ? ((m.currentPrice - m.entryPrice) / m.entryPrice) * 100 : 0;
       return (
         `🌙 ${tokenLink(m.symbol, deps.chainSlug(m.chain), m.address)} (${m.chain}) *${fmtPct(pnl)}*\n` +
-        `   hold ${m.moonPct.toFixed(0)}% posisi awal · ${fmtUsd(m.entryPrice)} → ${fmtUsd(m.currentPrice)}\n` +
+        `   hold ${m.moonPct.toFixed(0)}% of original position · ${fmtUsd(m.entryPrice)} → ${fmtUsd(m.currentPrice)}\n` +
         `   \`${m.address}\``
       );
     });
@@ -60,9 +60,9 @@ export async function stats(args, msg, deps) {
     )
     .join('\n\n');
   return deps.send(
-    `📊 *Statistik*\n\n` +
+    `📊 *Stats*\n\n` +
     `Total ${s.totalTrades} · ✅ ${s.wins} · 🔻 ${s.losses}\n` +
     `Win rate *${s.winRatePct.toFixed(1)}%* · Avg PnL *${fmtPct(s.avgPnlPct)}*\n\n` +
-    `*5 trade terakhir*\n\n${recent || '(belum ada)'}`
+    `*Last 5 trades*\n\n${recent || '(none yet)'}`
   );
 }

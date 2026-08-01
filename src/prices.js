@@ -17,7 +17,7 @@ export async function nativePriceUsd(chainKey) {
   if (hit && Date.now() - hit.t < TTL) return hit.price;
 
   const chainCfg = getConfig().chains[chainKey];
-  if (!chainCfg) throw new Error(`chain ${chainKey} tidak dikenal`);
+  if (!chainCfg) throw new Error(`chain ${chainKey} unknown`);
   const addr = WSOL;
 
   const pairs = await tokensBatch(chainCfg.dexscreenerId, [addr]);
@@ -34,7 +34,7 @@ export async function nativePriceUsd(chainKey) {
     }
     if (price > 0 && (!best || liq > best.liq)) best = { price, liq };
   }
-  if (!best) throw new Error(`harga native ${chainKey} tidak tersedia di DexScreener`);
+  if (!best) throw new Error(`native price for ${chainKey} not available on DexScreener`);
   cache.set(chainKey, { t: Date.now(), price: best.price });
   log.debug(`${chainKey} native = $${best.price.toFixed(2)}`);
   return best.price;

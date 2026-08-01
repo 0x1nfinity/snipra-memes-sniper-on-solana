@@ -369,7 +369,7 @@ export function reloadConfig() {
  */
 export function switchMode(newMode) {
   if (newMode !== 'paper' && newMode !== 'live') {
-    throw new Error(`mode tidak valid: ${newMode} (harus paper atau live)`);
+    throw new Error(`invalid mode: ${newMode} (must be paper or live)`);
   }
   if (newMode === activeMode) return activeMode;
 

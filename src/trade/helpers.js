@@ -16,25 +16,25 @@ export function effectiveMax(cfg) {
 export async function resolveCandidate(chainKey, address) {
   const cfg = getConfig();
   const dsId = cfg.chains[chainKey]?.dexscreenerId;
-  if (!dsId) throw new Error(`chain ${chainKey} tidak dikenal/aktif`);
+  if (!dsId) throw new Error(`chain ${chainKey} unknown/inactive`);
   const pairs = await tokenPairs(dsId, address);
   const pair = bestPair(pairs);
-  if (!pair) throw new Error(`token ${address} tidak ditemukan di DexScreener`);
+  if (!pair) throw new Error(`token ${address} not found on DexScreener`);
   return normalizePair(pair, chainKey);
 }
 
 export async function buyToken(chainKey, address, amountNative, source, candidate, executor, onTradeClosed) {
   const cfg = getConfig();
   if (!cfg.chains[chainKey]?.enabled)
-    throw new Error(`chain ${chainKey} nonaktif`);
+    throw new Error(`chain ${chainKey} disabled`);
   const c = candidate || (await resolveCandidate(chainKey, address));
 
-  if (findOpen(chainKey, c.address)) throw new Error(`sudah ada posisi ${c.symbol}`);
+  if (findOpen(chainKey, c.address)) throw new Error(`position already open for ${c.symbol}`);
   if (inCooldown(chainKey, c.address, cfg.trading.cooldownMinutes, cfg.trading.maxTradesBeforeCooldown))
-    throw new Error(`${c.symbol} masih cooldown`);
+    throw new Error(`${c.symbol} still in cooldown`);
   const effMax = effectiveMax(cfg);
   if (openPositions().length >= effMax)
-    throw new Error(`max posisi (${effMax}) tercapai`);
+    throw new Error(`max positions (${effMax}) reached`);
 
   breaker.check(chainKey);
 
@@ -73,7 +73,7 @@ export async function sellToken(address, pct, executor, onTradeClosed) {
     return { ...res, chain: pos.chain };
   }
   const mb = findMoonbag(address);
-  if (!mb) throw new Error(`tidak ada posisi/moonbag utk ${shortAddr(address)}`);
+  if (!mb) throw new Error(`no position/moonbag for ${shortAddr(address)}`);
   const res = await executor.sell(mb.chain, mb.address, pct, { labels: mb.labels, fallbackPriceUsd: mb.currentPrice });
   if (pct >= 100) removeMoonbag(mb.id);
   else mb.moonPct = mb.moonPct * (1 - pct / 100);

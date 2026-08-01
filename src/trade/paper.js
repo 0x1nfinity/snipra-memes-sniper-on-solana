@@ -81,7 +81,7 @@ export class PaperChain {
 
   async _priceNative(token) {
     const p = await this._tryPriceNative(token);
-    if (p == null) throw new Error(`harga ${token.slice(0, 8)} tidak tersedia di DexScreener`);
+    if (p == null) throw new Error(`price for ${token.slice(0, 8)} not available on DexScreener`);
     return p;
   }
 

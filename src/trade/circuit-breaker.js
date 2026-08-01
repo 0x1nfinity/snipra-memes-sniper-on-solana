@@ -15,7 +15,7 @@ export class CircuitBreaker {
     const until = this._trippedUntil[chainKey];
     if (until && Date.now() < until) {
       const remaining = Math.ceil((until - Date.now()) / 1000);
-      throw new Error(`Circuit breaker ${chainKey} aktif — terlalu banyak posisi dibuka. Coba lagi dalam ${remaining}s.`);
+      throw new Error(`Circuit breaker ${chainKey} active — too many positions opened. Try again in ${remaining}s.`);
     }
   }
 
