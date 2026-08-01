@@ -13,7 +13,7 @@ const FILE = path.join(DATA_DIR, 'darwin.json');
  */
 export const GENE_SPACE = {
   minVolume24hUsd: { min: 10000, max: 500000, sigma: 0.25 },
-  minAgeMinutes: { min: 10, max: 720, sigma: 0.3 },
+  minAgeHours: { min: 0.17, max: 12, sigma: 0.3 },
   maxAgeHours: { min: 12, max: 336, sigma: 0.25 },
   minLiquidityUsd: { min: 5000, max: 200000, sigma: 0.25 },
   minMarketCapUsd: { min: 30000, max: 1000000, sigma: 0.3 },

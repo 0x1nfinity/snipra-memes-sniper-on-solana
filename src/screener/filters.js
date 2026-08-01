@@ -12,7 +12,7 @@ export function evaluate(c, f) {
   if (c.ageMinutes == null) {
     fail('age unknown');
   } else {
-    if (c.ageMinutes < f.minAgeMinutes) fail(`age ${c.ageMinutes.toFixed(0)}m < ${f.minAgeMinutes}m`);
+    if (c.ageMinutes < f.minAgeHours * 60) fail(`age ${c.ageMinutes.toFixed(0)}m < ${(f.minAgeHours * 60).toFixed(0)}m`);
     if (c.ageMinutes > f.maxAgeHours * 60) fail(`age ${(c.ageMinutes / 60).toFixed(0)}h > ${f.maxAgeHours}h`);
   }
 

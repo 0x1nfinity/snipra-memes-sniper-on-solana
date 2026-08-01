@@ -8,8 +8,8 @@ const fmtK = (v) => (v >= 1e6 ? `${(v / 1e6).toFixed(v % 1e6 ? 1 : 0)}M` : v >= 
 // group: 'main' (trading/eksekusi) atau 'filter' (hard filter screening).
 const MENU_NUM = {
   // ── main / trading ──
-  si: { group: 'main', path: 'screener.intervalSec', step: 300, min: 300, max: 21600, label: '🔍 Scan', fmt: (v) => `${Math.round(v / 60)}m` },
-  bs: { group: 'main', path: 'chains.solana.buyAmount', step: 0.05, min: 0.05, max: 50, label: '💰 Buy SOL', fmt: (v) => `${+v.toFixed(3)}` },
+  si: { group: 'main', path: 'telegram.screeningcyclemin', step: 5, min: 5, max: 360, label: '🔍 Scan', fmt: (v) => `${v}m` },
+  bs: { group: 'main', path: 'trading.buyAmount', step: 0.05, min: 0.05, max: 50, label: '💰 Buy SOL', fmt: (v) => `${+v.toFixed(3)}` },
   sl: { group: 'main', path: 'trading.stopLossPct', step: 5, min: -90, max: -5, label: '🛑 SL', fmt: (v) => `${v}%` },
   ta: { group: 'main', path: 'trailing.activateGainPct', step: 5, min: 5, max: 500, label: '📈 Trail↑', fmt: (v) => `${v}%` },
   tp: { group: 'main', path: 'trailing.trailPct', step: 1, min: 1, max: 50, label: '📉 Trail↓', fmt: (v) => `${v}%` },
@@ -18,7 +18,7 @@ const MENU_NUM = {
   fliq: { group: 'filter', path: 'screener.filters.minLiquidityUsd', step: 5000, min: 0, max: 2e6, label: '💧 Liq', fmt: (v) => `$${fmtK(v)}` },
   fmcn: { group: 'filter', path: 'screener.filters.minMarketCapUsd', step: 10000, min: 0, max: 5e6, label: '💰 MC↓', fmt: (v) => `$${fmtK(v)}` },
   fmcx: { group: 'filter', path: 'screener.filters.maxMarketCapUsd', step: 1e6, min: 1e6, max: 1e8, label: '💰 MC↑', fmt: (v) => `$${fmtK(v)}` },
-  fagn: { group: 'filter', path: 'screener.filters.minAgeMinutes', step: 15, min: 0, max: 1440, label: '⏱ Age↓', fmt: (v) => `${v}m` },
+  fagn: { group: 'filter', path: 'screener.filters.minAgeHours', step: 0.25, min: 0, max: 24, label: '⏱ Age↓', fmt: (v) => `${v}h` },
   fagx: { group: 'filter', path: 'screener.filters.maxAgeHours', step: 12, min: 12, max: 720, label: '⏱ Age↑', fmt: (v) => `${v}h` },
   fhld: { group: 'filter', path: 'screener.filters.minHolders', step: 50, min: 0, max: 10000, label: '👥 Hold', fmt: (v) => `${v}` },
   ftx: { group: 'filter', path: 'screener.filters.minTraders24h', step: 50, min: 0, max: 10000, label: '🔁 Tx', fmt: (v) => `${v}` },
@@ -100,7 +100,7 @@ export async function set(args, msg, deps) {
   }
   const value = setPath(path, args.slice(1).join(' '));
   // interval screening/monitor/laporan langsung diterapkan tanpa restart bot
-  if (['screener.intervalSec', 'monitor.intervalSec', 'telegram.statusIntervalMin'].includes(path)) {
+  if (['telegram.screeningcyclemin', 'monitor.intervalSec', 'telegram.managecyclemin'].includes(path)) {
     deps.restartLoops();
     return deps.send(`✅ \`${path}\` = \`${JSON.stringify(value)}\` — timer di-restart, langsung aktif.`);
   }
@@ -162,7 +162,7 @@ export async function handleMenuCallback(q, data, bot, deps) {
       let next = cur + (action === 'inc' ? m.step : -m.step);
       next = Math.max(m.min, Math.min(m.max, Number(next.toFixed(6))));
       setPath(m.path, next);
-      if (m.path === 'screener.intervalSec') deps.restartLoops();
+      if (m.path === 'telegram.screeningcyclemin') deps.restartLoops();
       return editMenu(m.group, `${m.label} → ${m.fmt(next)}`);
     }
     default:

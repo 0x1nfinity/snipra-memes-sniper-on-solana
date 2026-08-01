@@ -99,7 +99,7 @@ export class LLM {
   /**
    * Gate buy/skip: token SUDAH lolos semua hard filter ketat. Default = BUY.
    * LLM HANYA memutuskan buy/skip + confidence; ukuran posisi TIDAK lagi ditentukan
-   * LLM — selalu = config.json chains.<key>.buyAmount (lihat index.js).
+   * LLM — selalu = config trading.buyAmount (lihat index.js).
    * Return { action: 'buy'|'skip', confidence: 0-1, risk, reason }.
    */
   async assessToken(c) {

@@ -41,6 +41,20 @@ function configFileFor(mode) {
  *   - runtime lewat Telegram: /set screener.filters.minLiquidityUsd 30000
  *     (dipersist balik ke config.<mode>.json yang sama)
  */
+// Properti chain yang tidak lagi user-editable (bot ini dibuild khusus utk Solana).
+// Dipasang balik ke config.chains.solana saat build agar kode konsumen (executor,
+// screener, telegram, dst.) yang masih mengakses cfg.chains[...] tetap jalan.
+const CHAIN_FIXED = {
+  solana: {
+    enabled: true,
+    type: 'solana',
+    dexscreenerId: 'solana',
+    gmgnSlug: 'sol', // slug URL gmgn.ai/<slug>/token/<address>
+    executor: 'jupiter', // 'jupiter' | 'gmgn'
+    priorityFee: 'auto',
+  },
+};
+
 export const DEFAULTS = {
   // 'paper' = trade simulasi penuh (harga real, saldo virtual, PnL dicatat ke SQLite)
   // 'live'  = transaksi on-chain sungguhan
@@ -50,25 +64,13 @@ export const DEFAULTS = {
     // Alternatif: startBalanceUsd (angka) utk konversi otomatis dari USD.
     startBalance: { solana: 10 },
   },
-  chains: {
-    solana: {
-      enabled: true,
-      type: 'solana',
-      dexscreenerId: 'solana',
-      gmgnSlug: 'sol', // slug URL gmgn.ai/<slug>/token/<address>
-      buyAmount: 0.3, // ukuran posisi PERSIS dalam SOL (satu-satunya kontrol ukuran)
-      executor: 'jupiter', // 'jupiter' | 'gmgn'
-      priorityFee: 'auto',
-    },
-  },
   screener: {
-    intervalSec: 3600, // screening per jam — hemat API & credit LLM
     maxCandidatesPerCycle: 3,
     sources: { tokenProfiles: true, boostsLatest: true, boostsTop: true },
     filters: {
       // ===== WAJIB =====
       minVolume24hUsd: 50000, // volume per hari
-      minAgeMinutes: 30, // umur pair minimal (anti-scam menit pertama)
+      minAgeHours: 0.5, // umur pair minimal, dalam jam (anti-scam menit pertama)
       maxAgeHours: 168, // umur pair maksimal (fokus memecoin baru)
       minLiquidityUsd: 20000,
       minMarketCapUsd: 100000,
@@ -99,9 +101,9 @@ export const DEFAULTS = {
     },
   },
   trading: {
+    buyAmount: 0.3, // ukuran posisi PERSIS dalam SOL (satu-satunya kontrol ukuran)
     slippageBps: 300,
     maxPositions: 20,
-    maxPerChain: 10,
     minSwapUsd: 5, // tolak swap bernilai di bawah ini (buy & sizing)
     cooldownMinutes: 240, // jangan re-buy token yang sama dalam window ini
     stopLossPct: -35,
@@ -117,7 +119,8 @@ export const DEFAULTS = {
     // Abaikan update harga jika lonjakan melebihi sekian % dalam satu tick (anti-glitch).
     // 0 = nonaktif, default 500% (6x). Untuk token meme baru bisa diset lebih tinggi.
     priceAnomalySpikePct: 500,
-    // Biaya gas untuk paper mode (estimasi per swap)
+    // Biaya gas utk simulasi paper mode (estimasi per swap). Hanya relevan saat
+    // mode paper — nilainya hidup di config.paper.json, bukan config.live.json.
     paperGas: { solana: 0.000005 },
   },
   tpLadder: [
@@ -158,7 +161,7 @@ export const DEFAULTS = {
     enabled: false, // aktifkan via /set llm.enabled true (butuh API key)
     provider: 'openrouter', // 'openrouter' | 'deepseek'
     model: 'deepseek/deepseek-chat-v3-0324', // model OpenRouter; provider deepseek pakai 'deepseek-chat'
-    // LLM = GATE buy/skip, BUKAN sizer: ukuran posisi selalu = chains.<key>.buyAmount.
+    // LLM = GATE buy/skip, BUKAN sizer: ukuran posisi selalu = trading.buyAmount.
     gateBuy: true, // LLM ikut menilai sebelum buy (false = langsung buy semua yang lolos filter)
     minConfidence: 0.35, // action=buy tapi confidence di bawah ini → tetap ditolak
     failOpen: true, // true = LLM error → token lolos; false = LLM error → token ditolak
@@ -168,7 +171,8 @@ export const DEFAULTS = {
   telegram: {
     notifyScreening: true,
     notifyPriceMoves: false,
-    statusIntervalMin: 30, // laporan berkala (saldo + PnL); 0 = nonaktif
+    screeningcyclemin: 60, // interval loop screening (cari kandidat baru), dalam menit
+    managecyclemin: 30, // interval laporan evaluasi posisi (saldo + PnL) + notif; 0 = nonaktif
   },
 };
 
@@ -185,6 +189,69 @@ function deepMerge(base, override) {
 let activeMode = null;
 let config = null;
 let configWatcher = null;
+let watchedFiles = [];
+
+// config.live.json = sumber tunggal untuk semua pengaturan umum (screener, llm,
+// trailing, dll). config.paper.json HANYA boleh override field-field berikut;
+// selebihnya selalu ikut config.live.json walau sedang mode paper.
+function isPaperOverridePath(pathStr) {
+  return (
+    pathStr === 'paper' ||
+    pathStr.startsWith('paper.') ||
+    pathStr === 'trading.maxPositions' ||
+    pathStr === 'trading.buyAmount' ||
+    pathStr === 'trading.paperGas' ||
+    pathStr.startsWith('trading.paperGas.')
+  );
+}
+
+/** Build config aktif: DEFAULTS + config.live.json, lalu (kalau mode paper) di-overlay config.paper.json. */
+function buildConfig(mode) {
+  const liveFile = configFileFor('live');
+  let liveSaved = {};
+  if (fs.existsSync(liveFile)) {
+    liveSaved = JSON.parse(fs.readFileSync(liveFile, 'utf8')); // biar error kalau rusak — live adalah sumber utama
+  }
+  let merged = deepMerge(structuredClone(DEFAULTS), liveSaved);
+
+  if (mode === 'paper') {
+    const paperFile = configFileFor('paper');
+    if (fs.existsSync(paperFile)) {
+      try {
+        const paperSaved = JSON.parse(fs.readFileSync(paperFile, 'utf8'));
+        merged = deepMerge(merged, paperSaved);
+      } catch (e) {
+        log.warn(`config.paper.json rusak, override paper diabaikan:`, e.message);
+      }
+    }
+  }
+
+  // chains.solana bukan lagi field yang user-edit di file JSON — properti tetapnya
+  // di-hardcode (CHAIN_FIXED), hanya buyAmount yang ikut trading.buyAmount (bisa
+  // beda live/paper). Dipasang di sini biar konsumen lama (cfg.chains[...]) jalan.
+  merged.chains = {
+    solana: { ...CHAIN_FIXED.solana, buyAmount: merged.trading.buyAmount },
+  };
+
+  return merged;
+}
+
+function ensureConfigFiles() {
+  const liveFile = configFileFor('live');
+  if (!fs.existsSync(liveFile)) {
+    const toSave = structuredClone(DEFAULTS);
+    delete toSave.paper; // paper.startBalance cuma relevan di config.paper.json
+    delete toSave.trading.paperGas; // paperGas cuma relevan di config.paper.json
+    fs.writeFileSync(liveFile, JSON.stringify(toSave, null, 2));
+    log.info('config.live.json belum ada — dibuat dengan nilai default');
+  }
+  const paperFile = configFileFor('paper');
+  if (!fs.existsSync(paperFile)) {
+    const seed = { paper: structuredClone(DEFAULTS.paper) };
+    fs.writeFileSync(paperFile, JSON.stringify(seed, null, 2));
+    log.info('config.paper.json belum ada — dibuat (hanya override paper: startBalance)');
+  }
+}
 
 export function loadConfig() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -195,29 +262,25 @@ export function loadConfig() {
   // Migrate old config.json to new split files BEFORE loading,
   // so migrated values are picked up right away.
   migrateOldConfig();
+  ensureConfigFiles();
 
-  const file = configFileFor(activeMode);
-  if (fs.existsSync(file)) {
-    try {
-      const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
-      config = deepMerge(structuredClone(DEFAULTS), saved);
-      log.info(`config loaded from config.${activeMode}.json`);
-    } catch (e) {
-      log.error(`config.${activeMode}.json rusak, pakai defaults:`, e.message);
-      config = structuredClone(DEFAULTS);
-    }
-  } else {
-    // First run: create config file from defaults
+  try {
+    config = buildConfig(activeMode);
+    log.info(`config loaded: config.live.json${activeMode === 'paper' ? ' + config.paper.json (override)' : ''} (mode=${activeMode})`);
+  } catch (e) {
+    log.error(`config.live.json rusak, pakai defaults:`, e.message);
     config = structuredClone(DEFAULTS);
-    saveConfig();
-    log.info(`config.${activeMode}.json belum ada — dibuat dengan nilai default`);
   }
 
   // DRY_RUN override: jika diset, paksa paper
-  if (process.env.DRY_RUN === '1') {
-    if (activeMode !== 'paper') {
-      log.warn(`⚠️ DRY_RUN=1 di .env MEMAKSA mode 'paper' walau mode='${activeMode}'. Set DRY_RUN=0 untuk live.`);
-      activeMode = 'paper';
+  if (process.env.DRY_RUN === '1' && activeMode !== 'paper') {
+    log.warn(`⚠️ DRY_RUN=1 di .env MEMAKSA mode 'paper' walau mode='${activeMode}'. Set DRY_RUN=0 untuk live.`);
+    activeMode = 'paper';
+    try {
+      config = buildConfig(activeMode);
+    } catch (e) {
+      log.error(`config.live.json rusak, pakai defaults:`, e.message);
+      config = structuredClone(DEFAULTS);
     }
   }
 
@@ -247,38 +310,47 @@ function migrateOldConfig() {
   }
 }
 
-export function saveConfig() {
-  if (!activeMode) return;
-  const file = configFileFor(activeMode);
-  // Strip mode if somehow present
-  const toSave = { ...config };
-  delete toSave.mode;
-  fs.writeFileSync(file, JSON.stringify(toSave, null, 2));
+/** Tulis satu path field ke file JSON tertentu, merge dengan isi file apa adanya (bukan versi ter-resolve DEFAULTS). */
+function writePathToFile(file, pathStr, value) {
+  let saved = {};
+  try {
+    saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch { /* file belum ada / rusak → mulai dari kosong */ }
+  const keys = pathStr.split('.');
+  const last = keys.pop();
+  let target = saved;
+  for (const k of keys) {
+    if (typeof target[k] !== 'object' || target[k] === null) target[k] = {};
+    target = target[k];
+  }
+  target[last] = value;
+  fs.writeFileSync(file, JSON.stringify(saved, null, 2));
+}
+
+/** File tujuan penyimpanan untuk sebuah path /set, tergantung mode aktif. */
+function targetFileForPath(pathStr) {
+  if (activeMode === 'paper' && isPaperOverridePath(pathStr)) return configFileFor('paper');
+  return configFileFor('live');
 }
 
 // Path timer yang butuh restart loop (bukan sekadar nilai) kalau diubah dari disk.
-const TIMER_PATHS = ['screener.intervalSec', 'monitor.intervalSec', 'telegram.statusIntervalMin'];
+const TIMER_PATHS = ['telegram.screeningcyclemin', 'monitor.intervalSec', 'telegram.managecyclemin'];
 
 /**
- * Baca ulang config.<mode>.json dari disk ke objek in-memory (hot-reload).
+ * Baca ulang config.live.json (+ config.paper.json bila mode paper) dari disk (hot-reload).
  * Dipakai agar edit manual file langsung berlaku tanpa restart proses.
  * Aman terhadap self-write (nilai sama → changed:false) & JSON setengah tertulis.
  * @returns {{changed: boolean, timersChanged: boolean}}
  */
 export function reloadConfig() {
   if (!activeMode) return { changed: false, timersChanged: false };
-  const file = configFileFor(activeMode);
-  if (!fs.existsSync(file)) return { changed: false, timersChanged: false };
-  let saved;
+  let next;
   try {
-    saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    next = buildConfig(activeMode);
   } catch (e) {
     log.debug('reload config dilewati (JSON belum valid):', e.message);
     return { changed: false, timersChanged: false };
   }
-  const next = deepMerge(structuredClone(DEFAULTS), saved);
-  delete next.mode;
-  // DRY_RUN=1 forced paper mode in loadConfig() — reload doesn't change mode
   const prev = config;
   const changed = JSON.stringify(next) !== JSON.stringify(prev);
   const pick = (o, p) => p.split('.').reduce((a, k) => (a == null ? undefined : a[k]), o);
@@ -288,8 +360,8 @@ export function reloadConfig() {
 }
 
 /**
- * Ganti mode (paper ↔ live). Simpan config aktif ke file, lalu load config
- * dari file mode baru. Return mode baru.
+ * Ganti mode (paper ↔ live). Config sudah tersimpan per-field secara langsung
+ * lewat setPath(), jadi di sini cukup build ulang config utk mode baru.
  */
 export function switchMode(newMode) {
   if (newMode !== 'paper' && newMode !== 'live') {
@@ -297,43 +369,19 @@ export function switchMode(newMode) {
   }
   if (newMode === activeMode) return activeMode;
 
-  // Save current config first
-  saveConfig();
-
-  // Switch
   const oldMode = activeMode;
   activeMode = newMode;
   writeModeMarker(activeMode);
 
-  // Load other config file
-  const file = configFileFor(activeMode);
-  if (fs.existsSync(file)) {
-    try {
-      const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
-      config = deepMerge(structuredClone(DEFAULTS), saved);
-      log.info(`switched mode ${oldMode} → ${activeMode}, config loaded from config.${activeMode}.json`);
-    } catch (e) {
-      log.error(`config.${activeMode}.json rusak saat switch:`, e.message);
-      config = structuredClone(DEFAULTS);
-    }
-  } else {
-    // New mode has no config yet — seed from defaults
+  try {
+    config = buildConfig(activeMode);
+    log.info(`switched mode ${oldMode} → ${activeMode}, config live.json${activeMode === 'paper' ? ' + paper.json (override)' : ''}`);
+  } catch (e) {
+    log.error(`config.live.json rusak saat switch:`, e.message);
     config = structuredClone(DEFAULTS);
-    saveConfig();
-    log.info(`config.${activeMode}.json dibuat dari defaults (mode baru)`);
   }
 
-  // Update watcher to track new active file
-  if (configWatcher) {
-    fs.unwatchFile(configFileFor(oldMode));
-    fs.watchFile(configFileFor(activeMode), { interval: 2000 }, () => {
-      const res = reloadConfig();
-      if (res.changed) {
-        log.info(`config.${activeMode}.json berubah di disk — dimuat ulang tanpa restart`);
-        configChangeCallback?.(res);
-      }
-    });
-  }
+  refreshWatchers();
 
   return activeMode;
 }
@@ -344,24 +392,37 @@ export function getActiveMode() {
 
 let configChangeCallback = null;
 
+function watchFileChange(file) {
+  fs.watchFile(file, { interval: 2000 }, () => {
+    const res = reloadConfig();
+    if (res.changed) {
+      log.info(`${path.basename(file)} berubah di disk — dimuat ulang tanpa restart`);
+      configChangeCallback?.(res);
+    }
+  });
+}
+
+/** config.live.json selalu dipantau; config.paper.json ikut dipantau hanya saat mode paper. */
+function refreshWatchers() {
+  if (!configWatcher) return;
+  for (const f of watchedFiles) fs.unwatchFile(f);
+  watchedFiles = [configFileFor('live')];
+  if (activeMode === 'paper') watchedFiles.push(configFileFor('paper'));
+  for (const f of watchedFiles) watchFileChange(f);
+}
+
 /**
- * Pantau config.<mode>.json di disk; panggil reloadConfig() tiap kali berubah.
- * Pakai watchFile (polling) agar tahan terhadap simpan-atomic editor (nano/vscode).
+ * Pantau config.live.json (+ config.paper.json saat mode paper) di disk; panggil
+ * reloadConfig() tiap kali berubah. Pakai watchFile (polling) agar tahan terhadap
+ * simpan-atomic editor (nano/vscode).
  * onChange({changed, timersChanged}) dipanggil hanya saat ada perubahan nyata.
  */
 export function watchConfig(onChange) {
   configChangeCallback = onChange;
   configWatcher = true;
-  const file = configFileFor(activeMode);
   try {
-    fs.watchFile(file, { interval: 2000 }, () => {
-      const res = reloadConfig();
-      if (res.changed) {
-        log.info(`config.${activeMode}.json berubah di disk — dimuat ulang tanpa restart`);
-        onChange?.(res);
-      }
-    });
-    log.info(`hot-reload config.${activeMode}.json aktif (pantau tiap 2s)`);
+    refreshWatchers();
+    log.info(`hot-reload config aktif (pantau tiap 2s, mode=${activeMode})`);
   } catch (e) {
     log.error('gagal memasang watcher config:', e.message);
   }
@@ -378,13 +439,6 @@ export function getPath(pathStr) {
 
 /** set nilai via path "a.b.c" dengan koersi tipe; return nilai baru */
 export function setPath(pathStr, rawValue) {
-  const keys = pathStr.split('.');
-  const last = keys.pop();
-  let target = config;
-  for (const k of keys) {
-    if (typeof target[k] !== 'object' || target[k] === null) target[k] = {};
-    target = target[k];
-  }
   let value = rawValue;
   if (typeof rawValue === 'string') {
     const s = rawValue.trim();
@@ -395,8 +449,10 @@ export function setPath(pathStr, rawValue) {
       try { value = JSON.parse(s); } catch { value = s; }
     }
   }
-  target[last] = value;
-  saveConfig();
+  writePathToFile(targetFileForPath(pathStr), pathStr, value);
+  // Rebuild dari file (bukan cuma tempel ke in-memory) — perlu supaya field turunan
+  // seperti chains.solana.buyAmount (disintesis dari trading.buyAmount) ikut sinkron.
+  config = buildConfig(activeMode);
   // Notifikasi subsistem yang bergantung pada config (executor rebuild, timer restart).
   // Tanpa ini, perubahan via /set atau menu callback tidak akan diterapkan karena
   // reloadConfig() deteksi "no change" (memori sudah sama dengan file di disk).

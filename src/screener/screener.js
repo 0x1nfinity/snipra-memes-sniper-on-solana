@@ -11,7 +11,7 @@ const log = createLogger('screener');
 // Field yang boleh dieksplorasi Darwin, dengan arah "stricter"-nya.
 // Config user = BATAS KERAS: genome hanya boleh memperketat, tidak pernah melonggarkan.
 const MIN_FIELDS = [
-  'minVolume24hUsd', 'minAgeMinutes', 'minLiquidityUsd', 'minMarketCapUsd',
+  'minVolume24hUsd', 'minAgeHours', 'minLiquidityUsd', 'minMarketCapUsd',
   'minHolders', 'minTraders24h', 'minBuySellRatio', 'minVolLiqRatio',
 ];
 const MAX_FIELDS = ['maxAgeHours', 'maxMarketCapUsd'];
@@ -115,7 +115,7 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
       (c.marketCap ?? 0) >= f.minMarketCapUsd &&
       (c.marketCap ?? 0) <= f.maxMarketCapUsd &&
       c.ageMinutes != null &&
-      c.ageMinutes >= f.minAgeMinutes &&
+      c.ageMinutes >= f.minAgeHours * 60 &&
       c.ageMinutes <= f.maxAgeHours * 60
     );
   });

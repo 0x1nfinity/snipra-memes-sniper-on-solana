@@ -8,7 +8,7 @@ ke proyek terpisah.)
 - **`paper` (default)** — papertest: trade berjalan persis seperti live (screening → open posisi → TP ladder/trailing/SL → close) memakai harga real-time + simulasi slippage, tapi dengan **saldo virtual** (`paper.startBalance`), tanpa menyentuh saldo on-chain. Semua trade yang close dicatat ke **SQLite** (`data/snipra.db`, tabel `trades`) lengkap dengan PnL. Darwin & LLM tetap belajar dari hasilnya.
 - **`live`** — transaksi on-chain sungguhan (Jupiter/GMGN di Solana).
 
-Ganti via `config.json` → `"mode"` atau Telegram `/mode paper|live`. Lihat hasil papertest: `/papertrades`, reset saldo virtual: `/paperreset`.
+Ganti mode via Telegram `/mode paper|live` (tersimpan di `data/.mode`, bukan di file config). Lihat hasil papertest: `/papertrades`, reset saldo virtual: `/paperreset`.
 
 ## Fitur
 
@@ -24,7 +24,7 @@ Ganti via `config.json` → `"mode"` atau Telegram `/mode paper|live`. Lihat has
 
 ## Filter Screening (wajib + tambahan)
 
-Wajib: `minVolume24hUsd`, `minAgeMinutes`/`maxAgeHours`, `minLiquidityUsd`, `minMarketCapUsd`/`maxMarketCapUsd`, `minHolders`, `minTraders24h`.
+Wajib: `minVolume24hUsd`, `minAgeHours`/`maxAgeHours`, `minLiquidityUsd`, `minMarketCapUsd`/`maxMarketCapUsd`, `minHolders`, `minTraders24h`.
 Tambahan: buy/sell ratio, anti-dump 1 jam, rasio volume/likuiditas, socials, honeypot/freezable (GoPlus), buy/sell tax maksimum.
 
 Parameter numerik filter **dievolusi otomatis** oleh Darwin system; filter security tidak pernah dilonggarkan oleh evolusi.
@@ -63,7 +63,7 @@ npm run screen
 npm start
 ```
 
-⚠️ **Mulai dengan nominal kecil** (`chains.solana.buyAmount`). Memecoin sangat berisiko — bot ini bukan jaminan profit.
+⚠️ **Mulai dengan nominal kecil** (`trading.buyAmount`). Memecoin sangat berisiko — bot ini bukan jaminan profit.
 
 ## Perintah Telegram
 
@@ -104,8 +104,8 @@ src/
   darwin/darwin.js      # evolusi genome filter
   llm/llm.js            # OpenRouter/DeepSeek: gate + lessons
   telegram/bot.js       # command handler
-config.paper.json       # config mode paper (root, editable)
-config.live.json        # config mode live (root, editable)
+config.live.json        # sumber tunggal semua pengaturan umum (screener/filter/llm/trailing/dll)
+config.paper.json       # HANYA override mode paper: paper.startBalance, trading.maxPositions, trading.buyAmount, trading.paperGas
 data/                   # snipra.db (SQLite), positions.*.json, darwin.json, lessons.json
 ```
 

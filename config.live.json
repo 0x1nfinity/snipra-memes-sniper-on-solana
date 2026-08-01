@@ -1,22 +1,5 @@
 {
-  "paper": {
-    "startBalance": {
-      "solana": 10
-    }
-  },
-  "chains": {
-    "solana": {
-      "enabled": true,
-      "type": "solana",
-      "dexscreenerId": "solana",
-      "gmgnSlug": "sol",
-      "buyAmount": 0.04,
-      "executor": "jupiter",
-      "priorityFee": "auto"
-    }
-  },
   "screener": {
-    "intervalSec": 1800,
     "maxCandidatesPerCycle": 10,
     "sources": {
       "tokenProfiles": true,
@@ -25,7 +8,7 @@
     },
     "filters": {
       "minVolume24hUsd": 10000,
-      "minAgeMinutes": 120,
+      "minAgeHours": 2,
       "maxAgeHours": 168,
       "minLiquidityUsd": 15000,
       "minMarketCapUsd": 10000,
@@ -49,16 +32,15 @@
     }
   },
   "trading": {
+    "buyAmount": 0.04,
     "slippageBps": 50,
-    "maxPositions": 2,
-    "maxPerChain": 1,
+    "maxPositions": 1,
     "minSwapUsd": 1,
     "cooldownMinutes": 240,
     "stopLossPct": -20,
     "slFlashDropPct": 40,
     "priceMinLiquidityUsd": 300,
-    "priceAnomalySpikePct": 500,
-    "paperGas": { "solana": 0.000005 }
+    "priceAnomalySpikePct": 500
   },
   "tpLadder": [
     {
@@ -96,6 +78,7 @@
   "telegram": {
     "notifyScreening": true,
     "notifyPriceMoves": false,
-    "statusIntervalMin": 30
+    "screeningcyclemin": 60,
+    "managecyclemin": 30
   }
 }

@@ -57,7 +57,7 @@ function botContext() {
     .join('; ') || '(belum ada)';
   const enabledChains = Object.entries(cfg.chains).filter(([,c]) => c.enabled).map(([k]) => k).join(', ') || '(none)';
   return (
-    `mode=${getActiveMode()}, chains=${enabledChains}, screening tiap ${cfg.screener.intervalSec}s, monitor tiap ${cfg.monitor.intervalSec}s\n` +
+    `mode=${getActiveMode()}, chains=${enabledChains}, screening tiap ${cfg.telegram.screeningcyclemin}m, monitor tiap ${cfg.monitor.intervalSec}s\n` +
     `Posisi terbuka (${openPositions().length}):\n${posBlock}\n` +
     `Statistik: ${s.totalTrades} trades, win rate ${s.winRatePct.toFixed(1)}%, avg PnL ${s.avgPnlPct.toFixed(1)}%\n` +
     `Trade terakhir: ${lastTrades}\n` +
@@ -303,7 +303,7 @@ async function screeningCycle(force = false) {
 
 /** jadwalkan screening tepat di kelipatan wall-clock (mis. :00/:30 utk 30 menit) */
 function startScreeningLoop() {
-  const { intervalSec } = getConfig().screener;
+  const intervalSec = getConfig().telegram.screeningcyclemin * 60;
   if (screenTimer) { clearTimeout(screenTimer); clearInterval(screenTimer); }
   screenTimer = null;
   if (!intervalSec || intervalSec <= 0) return;

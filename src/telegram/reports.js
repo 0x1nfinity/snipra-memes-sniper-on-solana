@@ -70,7 +70,7 @@ export async function sendStatusReport(deps) {
 
 /** jadwalkan laporan tepat di kelipatan wall-clock (mis. :00, :30) */
 export function startStatusLoop() {
-  const min = getConfig().telegram.statusIntervalMin;
+  const min = getConfig().telegram.managecyclemin;
   if (statusTimer) { clearTimeout(statusTimer); clearInterval(statusTimer); }
   statusTimer = null;
   if (!min || min <= 0) return;

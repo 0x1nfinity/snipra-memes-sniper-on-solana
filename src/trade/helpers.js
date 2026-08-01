@@ -10,8 +10,7 @@ const log = createLogger('trade');
 
 export function effectiveMax(cfg) {
   const c = cfg || getConfig();
-  const enabledCount = Object.values(c.chains).filter(ch => ch.enabled).length;
-  return enabledCount > 1 ? c.trading.maxPositions : c.trading.maxPerChain;
+  return c.trading.maxPositions;
 }
 
 export async function resolveCandidate(chainKey, address) {
@@ -36,9 +35,6 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
   const effMax = effectiveMax(cfg);
   if (openPositions().length >= effMax)
     throw new Error(`max posisi (${effMax}) tercapai`);
-  const chainCount = openPositions().filter((p) => p.chain === chainKey).length;
-  if (chainCount >= cfg.trading.maxPerChain)
-    throw new Error(`maxPerChain ${chainKey} (${cfg.trading.maxPerChain}) tercapai`);
 
   breaker.check(chainKey);
 
