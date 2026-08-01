@@ -30,6 +30,8 @@ pm2.log
 
 # Claude Code
 .claude/
+.superpowers/
+docs/superpowers/
 
 # Local strategy config — personal trading params, not for the repo.
 # Copy config.live.example.json / config.paper.example.json to get started;
