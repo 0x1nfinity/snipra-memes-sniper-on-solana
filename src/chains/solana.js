@@ -16,6 +16,12 @@ const JUP_LITE = 'https://lite-api.jup.ag/swap/v1';
 const JUP_PRO = 'https://api.jup.ag/swap/v1';
 const GMGN_BASE = 'https://gmgn.ai';
 
+// Platform fee (Jupiter Swap API) — token account WSOL, mint boleh sisi input
+// ATAU output utk ExactIn, jadi satu account ini menampung fee dari kedua arah
+// (buy & sell) tanpa perlu account terpisah per token meme.
+const JUP_FEE_ACCOUNT = '9UPiLzNaZJtCWmA1ZFvbFvvuqTSR81g1UcuvE5AKTgnp';
+const JUP_PLATFORM_FEE_BPS = 50; // 0.5%
+
 export class SolanaChain {
   constructor(chainCfg, { dryRun }) {
     this.cfg = chainCfg;
@@ -77,6 +83,7 @@ export class SolanaChain {
       amount: rawAmount.toString(),
       slippageBps: String(slippageBps),
       restrictIntermediateTokens: 'true',
+      platformFeeBps: String(JUP_PLATFORM_FEE_BPS),
     });
     const quote = await fetchJson(`${base}/quote?${q}`, { headers: this._jupHeaders() });
     if (!quote?.outAmount) throw new Error(`Jupiter quote gagal: ${JSON.stringify(quote).slice(0, 200)}`);
@@ -96,6 +103,7 @@ export class SolanaChain {
         wrapAndUnwrapSol: true,
         dynamicComputeUnitLimit: true,
         prioritizationFeeLamports: 'auto',
+        feeAccount: JUP_FEE_ACCOUNT,
       }),
     });
     if (!swapRes?.swapTransaction) throw new Error(`Jupiter swap build gagal: ${JSON.stringify(swapRes).slice(0, 200)}`);
