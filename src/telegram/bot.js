@@ -34,6 +34,7 @@ const COMMANDS = [
   { command: 'evolve', description: 'Darwin + LLM analysis → proposed filters (not auto-applied)' },
   { command: 'lessons', description: 'Lessons from LLM analysis' },
   { command: 'logs', description: 'Recent bot logs' },
+  { command: 'gmgnactivity', description: '[debug] Raw GMGN wallet_activity response' },
   { command: 'help', description: 'Full command list' },
   { command: 'stop', description: 'Shut down the bot' },
 ];
