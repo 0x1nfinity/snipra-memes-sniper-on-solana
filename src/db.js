@@ -54,7 +54,7 @@ export function initDb() {
       chain      TEXT NOT NULL,
       token      TEXT NOT NULL,
       ath        REAL NOT NULL,
-      pumped     INTEGER NOT NULL DEFAULT 0,  -- 1 = pernah terdetiksi pump ekstrem
+      pumped     INTEGER NOT NULL DEFAULT 0,  -- 1 = pernah terdeteksi pump ekstrem
       first_seen INTEGER,
       updated_at INTEGER,
       PRIMARY KEY (chain, token)
@@ -239,7 +239,7 @@ export function storeDecisionCache(chain, address, verdict, { confidence, reason
          created_at = excluded.created_at, expires_at = excluded.expires_at,
          mcap_snapshot = excluded.mcap_snapshot, holders_snapshot = excluded.holders_snapshot`
     )
-    .run(chain, address, verdict, confidence ?? null, reason ?? null, now, now + ttlMs, mcap ?? null, holders ?? null);
+    .run(chain, address, verdict, confidence ?? 0, reason ?? null, now, now + ttlMs, mcap ?? null, holders ?? null);
 }
 
 /** Housekeeping: hapus entry cache yang sudah expired. Dipanggil tiap screening cycle. */
