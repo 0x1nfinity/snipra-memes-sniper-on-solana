@@ -44,15 +44,20 @@ export class Telegram {
    * deps diisi dari index.js: { executor, screenOnce, buyToken, sellToken,
    *   darwin, llm, setPaused, isPaused, shutdown }
    */
-  constructor(deps) {
+  constructor(deps, { interactive = true } = {}) {
     this.deps = deps;
+    this.interactive = interactive;
     this.chatId = process.env.TELEGRAM_CHAT_ID || null;
     this.bot = null;
-    this._commands = buildRegistry({
-      ...deps,
-      send: (...a) => this._send(...a),
-      chainSlug: (k) => this._chainSlug(k),
-    });
+    if (interactive) {
+      this._commands = buildRegistry({
+        ...deps,
+        send: (...a) => this._send(...a),
+        chainSlug: (k) => this._chainSlug(k),
+      });
+    } else {
+      this._commands = new Map();
+    }
   }
 
   start() {
@@ -63,23 +68,27 @@ export class Telegram {
     }
     this.bot = new TelegramBot(token, { polling: true });
     this.bot.on('polling_error', (e) => log.warn('polling_error:', e.message));
-    this.bot.on('message', (msg) => this._onMessage(msg).catch((e) => {
-      log.error('handler error:', e.message);
-      this._send(`⚠️ Error: ${e.message}`);
-    }));
-    this.bot.on('callback_query', (q) => this._onCallback(q).catch((e) => {
-      log.error('callback error:', e.message);
-      this._send(`⚠️ Error: ${e.message}`);
-    }));
-    // inject daftar command ke menu Telegram — tanpa BotFather
-    this.bot
-      .setMyCommands(COMMANDS)
-      .then(() => log.info(`${COMMANDS.length} commands registered to telegram menu`))
-      .catch((e) => log.warn('setMyCommands failed:', e.message));
-    log.info('telegram bot polling started');
+    if (this.interactive) {
+      this.bot.on('message', (msg) => this._onMessage(msg).catch((e) => {
+        log.error('handler error:', e.message);
+        this._send(`⚠️ Error: ${e.message}`);
+      }));
+      this.bot.on('callback_query', (q) => this._onCallback(q).catch((e) => {
+        log.error('callback error:', e.message);
+        this._send(`⚠️ Error: ${e.message}`);
+      }));
+      this.bot
+        .setMyCommands(COMMANDS)
+        .then(() => log.info(`${COMMANDS.length} commands registered to telegram menu`))
+        .catch((e) => log.warn('setMyCommands failed:', e.message));
+    } else {
+      // Skill mode: no command processing, just polling for delivery
+      this.bot.on('message', () => {}); // acknowledge messages silently
+    }
+    log.info(`telegram bot polling started (interactive=${this.interactive})`);
     const cfg = getConfig();
     const chains = Object.entries(cfg.chains).filter(([, c]) => c.enabled).map(([k]) => k).join(', ');
-    this.notify(`snipra online\n\nChain: ${chains}\nType /help for the command list.`);
+    this.notify(`snipra online\n\nChain: ${chains}\n${this.interactive ? 'Type /help for the command list.' : 'Skill mode — chat with me through your platform agent.'}`);
   }
 
   async stopPolling() {
