@@ -190,36 +190,14 @@ export class SolanaChain {
     }
     if (raw <= 0n) throw new Error(`balance ${tokenAddress.slice(0, 6)} = 0`);
 
-    // Capture SOL balance BEFORE swap (best-effort; fallback ke quote jika gagal)
-    let solBefore = 0n;
-    if (this.wallet) {
-      try {
-        solBefore = await this.connection.getBalance(this.wallet.publicKey);
-      } catch (e) {
-        log.warn(`failed to read SOL balance before swap: ${e.message}`);
-      }
-    }
-
     const res = await this._swap(tokenAddress, SOL_MINT, raw, slippageBps);
+    const quoteFallback = Number(res.outAmountRaw) / LAMPORTS_PER_SOL;
 
-    // Compute actual SOL received (balance delta).
-    // ⚠️ Swap SUDAH sukses di titik ini — jangan pernah throw.
-    // Jika query saldo setelah swap gagal (RPC down/timeout), fallback ke quote.
-    let receivedNative;
-    if (this.dryRun && !this.wallet) {
-      receivedNative = Number(res.outAmountRaw) / LAMPORTS_PER_SOL;
-    } else {
-      try {
-        const solAfter = await this.connection.getBalance(this.wallet.publicKey);
-        // Add a small estimate for tx fee since we can't easily get exact fee
-        const TX_FEE_ESTIMATE = 5000n; // 0.000005 SOL typical Jupiter tx fee
-        receivedNative = Number(solAfter - solBefore + TX_FEE_ESTIMATE) / LAMPORTS_PER_SOL;
-      } catch (e) {
-        // Fallback: pakai quote outAmount (tanpa koreksi fee — estimasi terbaik)
-        receivedNative = Number(res.outAmountRaw) / LAMPORTS_PER_SOL;
-        log.warn(`failed to read SOL balance after swap, falling back to quote: ${receivedNative.toFixed(4)} SOL (${e.message})`);
-      }
-    }
+    // ⚠️ Swap SUDAH sukses di titik ini — jangan pernah throw dari sini ke bawah.
+    // receivedNative diselesaikan lewat 3 tingkat fallback (GMGN → tx-meta on-chain → quote).
+    const receivedNative = (this.dryRun && !this.wallet)
+      ? quoteFallback
+      : await this._resolveReceivedNative(res.txid, tokenAddress, quoteFallback);
 
     log.info(`SELL ${pct}% ${tokenAddress.slice(0, 6)} → ${receivedNative.toFixed(4)} SOL, tx ${res.txid}`);
     return { txid: res.txid, soldRaw: raw, receivedNative };
