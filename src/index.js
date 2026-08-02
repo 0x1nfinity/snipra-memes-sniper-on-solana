@@ -6,6 +6,7 @@ import { recentTrades } from './db.js';
 import { Executor } from './trade/executor.js';
 import { PositionManager } from './positions/manager.js';
 import { Darwin } from './darwin/darwin.js';
+import { HttpBackend } from './llm/http-backend.js';
 import { LLM } from './llm/llm.js';
 import { Telegram } from './telegram/bot.js';
 import { runScreening } from './screener/screener.js';
@@ -33,7 +34,7 @@ function applyMode() {
   syncStateMode();
 }
 const darwin = new Darwin().load();
-const llm = new LLM().load();
+const llm = new LLM({ backend: new HttpBackend() }).load();
 
 let paused = false;
 let screenTimer = null;
