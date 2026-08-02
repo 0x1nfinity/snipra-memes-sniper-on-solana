@@ -1,5 +1,5 @@
 import { getConfig, getActiveMode } from '../config.js';
-import { chainHeader, nativeSym, fmtHold, fmtNative } from './fmt.js';
+import { nativeSym, fmtHold, fmtNative } from './fmt.js';
 import { tokenLink, fmtPct, sleep } from '../utils.js';
 import { tradeStatsByChain } from '../db.js';
 import { effectiveMax } from '../trade/helpers.js';
@@ -53,7 +53,6 @@ export async function sendStatusReport(deps) {
         }).join('\n')
       : '  (no open positions)';
     blocks.push(
-      `${chainHeader(chainKey)}\n` +
       `Balance: ${b.error ? `⚠️ ${b.error}` : `${b.native.toFixed(4)} ${sym}`}\n` +
       `Unrealized: ${fmtNative(unrealized, chainKey)}\n` +
       `Realized: ${fmtNative(realized, chainKey)}${r ? ` (${r.total} closed)` : ''}\n\n` +

@@ -1,16 +1,16 @@
 import { getConfig, getActiveMode } from '../../config.js';
 import { openPositions, moonbags, statsSummary, currentPnlPct, getState } from '../../positions/state.js';
-import { fmtUsd, fmtPct, shortAddr, tokenLink } from '../../utils.js';
+import { fmtUsd, fmtPct, tokenLink } from '../../utils.js';
 import { effectiveMax } from '../../trade/helpers.js';
-import { chainEmoji, nativeSym, chainBlocks, fmtHold } from '../fmt.js';
+import { nativeSym, fmtHold } from '../fmt.js';
 
 export async function status(args, msg, deps) {
   await deps.positionManager.reconcileNow();
   const cfg = getConfig();
   const bal = await deps.executor.balances();
   const effMax = effectiveMax(cfg);
-  const lines = Object.entries(bal).map(
-    ([k, b]) => `${chainEmoji(k)} ${k}: ${b.error ? `⚠️ ${b.error}` : `*${b.native?.toFixed(4)} ${nativeSym(k)}*`} · ${shortAddr(b.address)}`
+  const lines = Object.values(bal).map(
+    (b) => (b.error ? `⚠️ ${b.error}` : `*${b.native?.toFixed(4)} ${nativeSym()}*`)
   );
 
   const onEnabled = (x) => cfg.chains[x.chain]?.enabled;
@@ -24,30 +24,27 @@ export async function status(args, msg, deps) {
     `Moonbag ${moonbags().length}\n` +
     `🧠 LLM ${cfg.llm.enabled ? cfg.llm.provider : 'off'}\n` +
     `🧬 Darwin ${cfg.darwin.enabled ? 'on' : 'off'}\n\n` +
-    `*Balance${getActiveMode() === 'paper' ? ' (virtual)' : ''}*\n${lines.join('\n')}`;
+    `*Balance${getActiveMode() === 'paper' ? ' (virtual)' : ''}*: ${lines.join(' · ')}`;
 
   if (list.length > 0) {
-    const byChain = {};
-    for (const p of list) {
+    const items = list.map((p) => {
       const pnl = currentPnlPct(p);
       const peak = ((p.peakPrice - p.entryPrice) / p.entryPrice) * 100;
-      const item =
+      return (
         `${pnl >= 0 ? '🟢' : '🔴'} ${tokenLink(p.symbol, deps.chainSlug(p.chain), p.address)} *${fmtPct(pnl)}* · ⏱ ${fmtHold(p.openedAt)}\n` +
         `   ${fmtUsd(p.entryPrice)} → ${fmtUsd(p.currentPrice)} · peak ${fmtPct(peak)}\n` +
-        `   remaining ${p.remainingPct.toFixed(0)}% · TP ${p.tpHit.length} · trailing ${p.trailingActive ? 'on' : 'off'}\n` +
-        `   \`${p.address}\``;
-      (byChain[p.chain] ??= []).push(item);
-    }
-    msgText += `\n\n📋 *Positions (${list.length})*\n\n${chainBlocks(byChain)}`;
+        `   remaining ${p.remainingPct.toFixed(0)}% · TP ${p.tpHit.length} · trailing ${p.trailingActive ? 'on' : 'off'}`
+      );
+    });
+    msgText += `\n\n📋 *Positions (${list.length})*\n\n${items.join('\n\n')}`;
   }
 
   if (moons.length > 0) {
     const moonLines = moons.map((m) => {
       const pnl = m.entryPrice > 0 ? ((m.currentPrice - m.entryPrice) / m.entryPrice) * 100 : 0;
       return (
-        `🌙 ${tokenLink(m.symbol, deps.chainSlug(m.chain), m.address)} (${m.chain}) *${fmtPct(pnl)}*\n` +
-        `   hold ${m.moonPct.toFixed(0)}% of original position · ${fmtUsd(m.entryPrice)} → ${fmtUsd(m.currentPrice)}\n` +
-        `   \`${m.address}\``
+        `🌙 ${tokenLink(m.symbol, deps.chainSlug(m.chain), m.address)} *${fmtPct(pnl)}*\n` +
+        `   hold ${m.moonPct.toFixed(0)}% of original position · ${fmtUsd(m.entryPrice)} → ${fmtUsd(m.currentPrice)}`
       );
     });
     msgText += `\n\n━━ 🌙 *MOONBAG (${moons.length})* ━━\n\n${moonLines.join('\n\n')}`;

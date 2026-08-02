@@ -1,6 +1,5 @@
 import { openPositions } from '../../positions/state.js';
 import { tokenLink, fmtPct, fmtUsd, shortAddr } from '../../utils.js';
-import { chainBlocks } from '../fmt.js';
 
 export async function buy(args, msg, deps) {
   if (args.length < 2) return deps.send('Usage: /buy <chain> <address> [amount]');
@@ -29,17 +28,14 @@ export async function closeall(args, msg, deps) {
   if (list.length === 0) return deps.send('No open positions.');
   await deps.send(`⏳ Closing ${list.length} positions…`);
   const results = await deps.closeAll('manual /closeall');
-  const byChain = {};
-  for (const r of results) {
-    (byChain[r.chain] ??= []).push(
-      r.error ? `⚠️ ${r.symbol} — ${r.error}` : `${r.pnl >= 0 ? '✅' : '🔻'} ${r.symbol} ${fmtPct(r.pnl)}`
-    );
-  }
+  const lines = results.map((r) =>
+    r.error ? `⚠️ ${r.symbol} — ${r.error}` : `${r.pnl >= 0 ? '✅' : '🔻'} ${r.symbol} ${fmtPct(r.pnl)}`
+  );
   const ok = results.filter((r) => !r.error);
   const avg = ok.length ? ok.reduce((s, r) => s + r.pnl, 0) / ok.length : 0;
   return deps.send(
     `🏁 *CLOSEALL* · ${ok.length}/${results.length} closed · avg ${fmtPct(avg)}\n\n` +
-    chainBlocks(byChain, { gapBetweenItems: false })
+    lines.join('\n')
   );
 }
 

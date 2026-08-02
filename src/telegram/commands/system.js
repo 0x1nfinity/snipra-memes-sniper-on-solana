@@ -1,6 +1,6 @@
 import { recentTrades, tradeStats } from '../../db.js';
 import { fmtPct } from '../../utils.js';
-import { nativeSym, chainBlocks, chainEmoji } from '../fmt.js';
+import { nativeSym } from '../fmt.js';
 import { recentLogs } from '../../logger.js';
 
 const HELP = `*snipra v2 — multi-chain meme sniper*
@@ -59,17 +59,14 @@ export async function papertrades(args, msg, deps) {
   const rows = recentTrades('paper', 10);
   const s = tradeStats('paper');
   if (!s || s.total === 0) return deps.send('No paper trades closed yet.');
-  const byChain = {};
-  for (const t of rows) {
+  const lines = rows.map((t) => {
     const held = t.hold_minutes >= 60 ? `${(t.hold_minutes / 60).toFixed(1)}h` : `${Math.round(t.hold_minutes)}m`;
-    (byChain[t.chain] ??= []).push(
-      `${t.pnl_pct >= 0 ? '✅' : '🔻'} ${t.symbol} *${fmtPct(t.pnl_pct)}* · ${t.pnl_native >= 0 ? '+' : ''}${t.pnl_native?.toFixed(4)} ${nativeSym(t.chain)} · ⏱ ${held}\n   📝 ${t.close_reason}`
-    );
-  }
+    return `${t.pnl_pct >= 0 ? '✅' : '🔻'} ${t.symbol} *${fmtPct(t.pnl_pct)}* · ${t.pnl_native >= 0 ? '+' : ''}${t.pnl_native?.toFixed(4)} ${nativeSym()} · ⏱ ${held}\n   📝 ${t.close_reason}`;
+  });
   return deps.send(
     `📒 *Paper trades* · ${s.total} total\n` +
     `Win rate *${((s.wins / s.total) * 100).toFixed(1)}%* · Avg PnL *${fmtPct(s.avg_pnl_pct)}*\n\n` +
-    chainBlocks(byChain)
+    lines.join('\n\n')
   );
 }
 
@@ -79,7 +76,7 @@ export async function paperreset(args, msg, deps) {
     positionManager: deps.positionManager,
     notify: (m) => deps.send(m),
   });
-  const lines = Object.entries(balances).map(([k, v]) => `${chainEmoji(k)} ${k}: ${v} ${nativeSym(k)}`);
+  const lines = Object.values(balances).map((v) => `${v} ${nativeSym()}`);
   const extra = [];
   if (closedCount > 0) extra.push(`${closedCount} positions closed`);
   if (lessonsDerived > 0) extra.push(`${lessonsDerived} lessons saved`);

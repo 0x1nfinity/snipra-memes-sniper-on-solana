@@ -2,17 +2,6 @@ import { fmtUsd, fmtPct } from '../utils.js';
 
 // ===== helper kosmetik bersama untuk semua pesan Telegram =====
 
-const CHAIN_EMOJI = { solana: '🟪' };
-
-export function chainEmoji(chainKey) {
-  return CHAIN_EMOJI[chainKey] || '⛓';
-}
-
-/** header blok chain: 🟪 SOLANA */
-export function chainHeader(chainKey) {
-  return `${chainEmoji(chainKey)} *${chainKey.toUpperCase()}*`;
-}
-
 /** simbol native chain: SOL */
 export function nativeSym() {
   return 'SOL';
@@ -52,16 +41,4 @@ export function llmLine(c) {
     return `LLM conf ${v.confidence.toFixed(2)} ${v.risk} — ${v.reason}`;
   }
   return `LLM ${v.reason || ''}`;
-}
-
-/**
- * Susun blok per chain dengan header + baris kosong antar item.
- * itemsByChain: { chainKey: [teksItem, ...] }
- */
-export function chainBlocks(itemsByChain, { gapBetweenItems = true } = {}) {
-  const sep = gapBetweenItems ? '\n\n' : '\n';
-  return Object.keys(itemsByChain)
-    .sort()
-    .map((ck) => `${chainHeader(ck)}\n\n${itemsByChain[ck].join(sep)}`)
-    .join('\n\n');
 }
