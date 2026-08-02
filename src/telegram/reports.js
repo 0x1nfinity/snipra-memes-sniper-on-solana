@@ -16,7 +16,7 @@ export function wibDateHour(nowMs = Date.now()) {
 
 let lastBriefingDate = null;
 
-export function checkBriefingTrigger(nowMs = Date.now()) {
+export function consumeBriefingTrigger(nowMs = Date.now()) {
   const { dateStr, hour } = wibDateHour(nowMs);
   const isBriefing = hour >= 8 && lastBriefingDate !== dateStr;
   if (isBriefing) lastBriefingDate = dateStr;
@@ -67,20 +67,23 @@ async function buildChainBlocks(deps, cfg) {
 async function prepareReport(deps) {
   if (deps.paused()) return null;
   const cfg = getConfig();
+  // Wait for an in-progress screening to finish first, so its Telegram
+  // notification arrives before this periodic/briefing report (preserves message order).
   for (let i = 0; i < 240 && deps.screenBusy(); i++) await sleep(500);
   const blocks = await buildChainBlocks(deps, cfg);
-  return { cfg, blocks };
+  const effMax = effectiveMax(cfg);
+  const header = `Positions ${deps.openPositions().length}/${effMax} · Moonbag ${deps.moonbags().length} · Auto-buy ${deps.paused() ? 'off' : 'on'}`;
+  return { cfg, blocks, header };
 }
 
 export async function sendStatusReport(deps) {
   const d = deps || _sendDeps;
   const prepared = await prepareReport(d);
   if (!prepared) return;
-  const { cfg, blocks } = prepared;
-  const effMax = effectiveMax(cfg);
+  const { blocks, header } = prepared;
   d.telegram.notify(
     `📊 Periodic report\n\n` +
-    `Positions ${d.openPositions().length}/${effMax} · Moonbag ${d.moonbags().length} · Auto-buy ${d.paused() ? 'off' : 'on'}\n\n` +
+    `${header}\n\n` +
     blocks.join('\n\n')
   );
 }
@@ -89,8 +92,7 @@ export async function sendDailyBriefing(deps) {
   const d = deps || _sendDeps;
   const prepared = await prepareReport(d);
   if (!prepared) return;
-  const { cfg, blocks } = prepared;
-  const effMax = effectiveMax(cfg);
+  const { blocks, header } = prepared;
   const mode = getActiveMode();
   const since = Date.now() - 24 * 3600 * 1000;
 
@@ -102,17 +104,22 @@ export async function sendDailyBriefing(deps) {
     ? `Closed: ${total} · Win rate: ${Math.round((wins / total) * 100)}% (${wins}W/${total - wins}L)\n24h PnL: ${fmtNative(pnl24h)}`
     : 'No trades closed in the last 24h.';
 
+  const LESSONS_LIMIT = 15;
   let lessonsText = 'No new lessons in the last 24h.';
   if (d.llm) {
     const recent = d.llm.getLessons(200).filter((l) => l.at >= since);
     if (recent.length) {
-      lessonsText = recent.map((l) => `• [${l.outcome}] ${l.text}`).join('\n');
+      const shown = recent.slice(0, LESSONS_LIMIT);
+      lessonsText = shown.map((l) => `• [${l.outcome}] ${l.text}`).join('\n');
+      if (recent.length > LESSONS_LIMIT) {
+        lessonsText += `\n…+${recent.length - LESSONS_LIMIT} more`;
+      }
     }
   }
 
   d.telegram.notify(
     `🌅 Daily briefing\n\n` +
-    `Positions ${d.openPositions().length}/${effMax} · Moonbag ${d.moonbags().length} · Auto-buy ${d.paused() ? 'off' : 'on'}\n\n` +
+    `${header}\n\n` +
     blocks.join('\n\n') +
     `\n\n📈 Last 24h\n${tradeSummary}` +
     `\n\n🧠 Lessons (24h)\n${lessonsText}`
@@ -128,8 +135,8 @@ export function startStatusLoop() {
   const periodMs = min * 60000;
   const delay = periodMs - (Date.now() % periodMs); // ke boundary berikutnya
   const doReport = () => {
-    const fn = checkBriefingTrigger() ? sendDailyBriefing : sendStatusReport;
-    fn().catch((e) => log.warn('status report failed:', e.message));
+    const fn = consumeBriefingTrigger() ? sendDailyBriefing : sendStatusReport;
+    fn().catch((e) => log.warn('report failed:', e.message));
   };
   statusTimer = setTimeout(() => {
     doReport();
