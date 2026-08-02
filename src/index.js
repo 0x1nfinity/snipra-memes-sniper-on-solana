@@ -207,6 +207,7 @@ setStatusDeps({
   openPositions,
   currentPnlPct,
   moonbags,
+  llm,
   paused: () => paused,
   screenBusy: () => screenBusy,
 });

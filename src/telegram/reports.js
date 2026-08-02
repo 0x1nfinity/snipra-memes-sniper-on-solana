@@ -127,7 +127,10 @@ export function startStatusLoop() {
   if (!min || min <= 0) return;
   const periodMs = min * 60000;
   const delay = periodMs - (Date.now() % periodMs); // ke boundary berikutnya
-  const doReport = () => sendStatusReport().catch((e) => log.warn('status report failed:', e.message));
+  const doReport = () => {
+    const fn = checkBriefingTrigger() ? sendDailyBriefing : sendStatusReport;
+    fn().catch((e) => log.warn('status report failed:', e.message));
+  };
   statusTimer = setTimeout(() => {
     doReport();
     statusTimer = setInterval(doReport, periodMs);
