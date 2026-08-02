@@ -20,6 +20,9 @@ data/
 npm-debug.log*
 pm2.log
 
+# Build artifacts
+build/
+
 # IDE & Editor
 .vscode/
 .idea/
