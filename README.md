@@ -1,7 +1,6 @@
 # snipra v2 — Solana Meme Sniper
 
-Memecoin trading bot for **Solana**. (The Robinhood Chain/EVM version has been
-extracted into a separate project.)
+Memecoin trading bot for **Solana**.
 
 ## Mode: paper vs live
 
