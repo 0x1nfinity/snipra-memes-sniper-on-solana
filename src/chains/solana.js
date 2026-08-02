@@ -8,6 +8,7 @@ import {
 import bs58 from 'bs58';
 import { fetchJson, sleep } from '../utils.js';
 import { createLogger } from '../logger.js';
+import { findActivityByTx } from '../gmgn/openapi.js';
 
 const log = createLogger('solana');
 
@@ -222,6 +223,34 @@ export class SolanaChain {
 
     log.info(`SELL ${pct}% ${tokenAddress.slice(0, 6)} → ${receivedNative.toFixed(4)} SOL, tx ${res.txid}`);
     return { txid: res.txid, soldRaw: raw, receivedNative };
+  }
+
+  /**
+   * Resolve SOL received from a sell: GMGN wallet_activity (primary — matches
+   * exactly what the user sees in GMGN's own UI, matched by tx_hash) → on-chain
+   * tx-meta delta (fallback 1) → the swap's own quote estimate (fallback 2, last resort).
+   */
+  async _resolveReceivedNative(txid, tokenAddress, quoteFallbackNative) {
+    try {
+      const match = await findActivityByTx(this.address, tokenAddress, txid);
+      if (match) {
+        log.info(`SELL PnL source: gmgn (tx ${txid.slice(0, 8)})`);
+        return Number(match.quote_amount);
+      }
+    } catch (e) {
+      log.warn(`gmgn findActivityByTx failed: ${e.message}`);
+    }
+    try {
+      const delta = await this._txMetaDelta(txid);
+      if (delta != null) {
+        log.info(`SELL PnL source: onchain-tx-meta (tx ${txid.slice(0, 8)})`);
+        return delta;
+      }
+    } catch (e) {
+      log.warn(`tx-meta delta failed: ${e.message}`);
+    }
+    log.warn(`SELL PnL source: quote-fallback (tx ${txid.slice(0, 8)}) — GMGN and tx-meta both unavailable`);
+    return quoteFallbackNative;
   }
 
   /**
