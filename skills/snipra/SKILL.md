@@ -105,9 +105,9 @@ Respond with:
 ```json
 {"reply":"<response text, Indonesian>"}
 ```
-Or with tool calls:
+Or with tool calls (note: `tool_calls` is at the top level, alongside `id` and `ok`, not nested inside `result`):
 ```json
-{"tool_calls":[{"id":"call_1","function":{"name":"buy_token","arguments":"{\"chain\":\"solana\",\"address\":\"...\"}"}}]}
+{"id":"<request id>","ok":true,"tool_calls":[{"id":"call_1","function":{"name":"buy_token","arguments":"{\"chain\":\"solana\",\"address\":\"...\"}"}}]}
 ```
 
 ## Shutdown
