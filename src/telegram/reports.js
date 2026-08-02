@@ -1,7 +1,7 @@
 import { getConfig, getActiveMode } from '../config.js';
 import { nativeSym, fmtHold, fmtNative } from './fmt.js';
 import { tokenLink, fmtPct, sleep } from '../utils.js';
-import { tradeStatsByChain } from '../db.js';
+import { tradeStatsByChain, tradeStatsSince } from '../db.js';
 import { effectiveMax } from '../trade/helpers.js';
 import { createLogger } from '../logger.js';
 
@@ -82,6 +82,40 @@ export async function sendStatusReport(deps) {
     `📊 Periodic report\n\n` +
     `Positions ${d.openPositions().length}/${effMax} · Moonbag ${d.moonbags().length} · Auto-buy ${d.paused() ? 'off' : 'on'}\n\n` +
     blocks.join('\n\n')
+  );
+}
+
+export async function sendDailyBriefing(deps) {
+  const d = deps || _sendDeps;
+  const prepared = await prepareReport(d);
+  if (!prepared) return;
+  const { cfg, blocks } = prepared;
+  const effMax = effectiveMax(cfg);
+  const mode = getActiveMode();
+  const since = Date.now() - 24 * 3600 * 1000;
+
+  const stats = tradeStatsSince(mode, since);
+  const total = stats?.total ?? 0;
+  const wins = stats?.wins ?? 0;
+  const pnl24h = stats?.total_pnl_native ?? 0;
+  const tradeSummary = total > 0
+    ? `Closed: ${total} · Win rate: ${Math.round((wins / total) * 100)}% (${wins}W/${total - wins}L)\n24h PnL: ${fmtNative(pnl24h)}`
+    : 'No trades closed in the last 24h.';
+
+  let lessonsText = 'No new lessons in the last 24h.';
+  if (d.llm) {
+    const recent = d.llm.getLessons(200).filter((l) => l.at >= since);
+    if (recent.length) {
+      lessonsText = recent.map((l) => `• [${l.outcome}] ${l.text}`).join('\n');
+    }
+  }
+
+  d.telegram.notify(
+    `🌅 Daily briefing\n\n` +
+    `Positions ${d.openPositions().length}/${effMax} · Moonbag ${d.moonbags().length} · Auto-buy ${d.paused() ? 'off' : 'on'}\n\n` +
+    blocks.join('\n\n') +
+    `\n\n📈 Last 24h\n${tradeSummary}` +
+    `\n\n🧠 Lessons (24h)\n${lessonsText}`
   );
 }
 
