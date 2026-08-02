@@ -54,11 +54,27 @@ export function initDb() {
       chain      TEXT NOT NULL,
       token      TEXT NOT NULL,
       ath        REAL NOT NULL,
-      pumped     INTEGER NOT NULL DEFAULT 0,  -- 1 = pernah terdeteksi pump ekstrem
+      pumped     INTEGER NOT NULL DEFAULT 0,  -- 1 = pernah terdetiksi pump ekstrem
       first_seen INTEGER,
       updated_at INTEGER,
       PRIMARY KEY (chain, token)
     );
+
+    -- cache verdict "skip" dari LLM per token, hindari tanya ulang LLM utk token
+    -- yang baru saja dinilai & kondisi pasarnya belum banyak berubah
+    CREATE TABLE IF NOT EXISTS decision_cache (
+      chain             TEXT NOT NULL,
+      address           TEXT NOT NULL,
+      verdict           TEXT NOT NULL,        -- 'skip' (hanya skip yang di-cache, buy langsung dieksekusi)
+      confidence        REAL NOT NULL,
+      reason            TEXT,
+      created_at        INTEGER NOT NULL,
+      expires_at        INTEGER NOT NULL,
+      mcap_snapshot     REAL,
+      holders_snapshot  INTEGER,
+      PRIMARY KEY (chain, address)
+    );
+    CREATE INDEX IF NOT EXISTS idx_decision_cache_expires ON decision_cache(expires_at);
   `);
   log.info('sqlite ready: data/snipra.db');
   return db;
@@ -183,6 +199,52 @@ export function athObserve(chain, token, highEstimate) {
   d.prepare(`UPDATE ath_watch SET ath=?, updated_at=? WHERE chain=? AND token=?`)
     .run(ath, now, chain, token);
   return { ath, firstSeen: row.first_seen };
+}
+
+// ===== decision cache (LLM token-saving) =====
+
+/**
+ * Cek apakah cache entry masih berlaku: belum expired, DAN kondisi pasar
+ * (mcap/holders) belum bergeser jauh sejak verdict di-cache.
+ * Pure function (tanpa DB) supaya gampang di-unit-test.
+ */
+export function decisionCacheValid(row, { mcap, holders, now = Date.now() } = {}) {
+  if (!row) return false;
+  if (row.expires_at <= now) return false;
+  if (mcap != null && row.mcap_snapshot != null && row.mcap_snapshot > 0) {
+    if (Math.abs(mcap - row.mcap_snapshot) / row.mcap_snapshot > 0.20) return false;
+  }
+  if (holders != null && row.holders_snapshot != null && row.holders_snapshot > 0) {
+    if (Math.abs(holders - row.holders_snapshot) / row.holders_snapshot > 0.30) return false;
+  }
+  return true;
+}
+
+export function checkDecisionCache(chain, address, { mcap, holders } = {}) {
+  const row = initDb()
+    .prepare(`SELECT * FROM decision_cache WHERE chain = ? AND address = ?`)
+    .get(chain, address);
+  if (!decisionCacheValid(row, { mcap, holders })) return null;
+  return { verdict: row.verdict, confidence: row.confidence, reason: row.reason };
+}
+
+export function storeDecisionCache(chain, address, verdict, { confidence, reason, mcap, holders, ttlMs }) {
+  const now = Date.now();
+  initDb()
+    .prepare(
+      `INSERT INTO decision_cache (chain, address, verdict, confidence, reason, created_at, expires_at, mcap_snapshot, holders_snapshot)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(chain, address) DO UPDATE SET
+         verdict = excluded.verdict, confidence = excluded.confidence, reason = excluded.reason,
+         created_at = excluded.created_at, expires_at = excluded.expires_at,
+         mcap_snapshot = excluded.mcap_snapshot, holders_snapshot = excluded.holders_snapshot`
+    )
+    .run(chain, address, verdict, confidence ?? null, reason ?? null, now, now + ttlMs, mcap ?? null, holders ?? null);
+}
+
+/** Housekeeping: hapus entry cache yang sudah expired. Dipanggil tiap screening cycle. */
+export function pruneExpiredDecisionCache() {
+  return initDb().prepare(`DELETE FROM decision_cache WHERE expires_at < ?`).run(Date.now()).changes;
 }
 
 // ===== paper holdings =====

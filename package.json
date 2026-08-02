@@ -10,7 +10,8 @@
     "screen": "node src/index.js --screen-once",
     "skill": "node src/skills/runner.js --skill-mode",
     "skill-dev": "DRY_RUN=1 node src/skills/runner.js --skill-mode",
-    "setup": "node scripts/install.js"
+    "setup": "node scripts/install.js",
+    "test": "node --test test/*.js"
   },
   "engines": {
     "node": ">=18"
