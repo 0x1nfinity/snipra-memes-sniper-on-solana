@@ -9,6 +9,20 @@ const log = createLogger('reports');
 
 let statusTimer = null;
 
+export function wibDateHour(nowMs = Date.now()) {
+  const d = new Date(nowMs + 7 * 3600 * 1000);
+  return { dateStr: d.toISOString().slice(0, 10), hour: d.getUTCHours() };
+}
+
+let lastBriefingDate = null;
+
+export function checkBriefingTrigger(nowMs = Date.now()) {
+  const { dateStr, hour } = wibDateHour(nowMs);
+  const isBriefing = hour >= 8 && lastBriefingDate !== dateStr;
+  if (isBriefing) lastBriefingDate = dateStr;
+  return isBriefing;
+}
+
 // Module-level deps for instance-level references (executor, telegram, callbacks, mutable state).
 // Set from index.js during initialization via setStatusDeps().
 let _sendDeps = {};
