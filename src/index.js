@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { loadConfig, getConfig, watchConfig, getActiveMode } from './config.js';
 import { initDb } from './db.js';
-import { loadState, syncStateMode, openPositions, currentPnlPct, moonbags } from './positions/state.js';
+import { loadState, syncStateMode, openPositions, statsSummary, currentPnlPct, moonbags } from './positions/state.js';
 import { recentTrades } from './db.js';
 import { Executor } from './trade/executor.js';
 import { PositionManager } from './positions/manager.js';
@@ -40,7 +40,7 @@ let paused = false;
 let screenBusyFlag = false;
 let _stopScreening = null;
 
-const botContext = createBotContext({ darwin });
+const botContext = createBotContext({ darwin, statsSummary });
 
 // ===== LLM tool-calling (#4): definisi + eksekutor =====
 
