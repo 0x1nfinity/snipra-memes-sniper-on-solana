@@ -224,6 +224,30 @@ export class SolanaChain {
     return { txid: res.txid, soldRaw: raw, receivedNative };
   }
 
+  /**
+   * Exact SOL delta caused by ONE specific transaction, read from its own
+   * meta.preBalances/postBalances — immune to any other concurrent wallet
+   * activity, unlike a separate before/after wallet-balance snapshot.
+   */
+  async _txMetaDelta(txid) {
+    for (let i = 0; i < 3; i++) {
+      try {
+        const tx = await this.connection.getTransaction(txid, { maxSupportedTransactionVersion: 0 });
+        if (tx?.meta) {
+          const keys = tx.transaction.message.staticAccountKeys;
+          const idx = keys.findIndex((k) => k.toBase58() === this.wallet.publicKey.toBase58());
+          if (idx >= 0) {
+            return (tx.meta.postBalances[idx] - tx.meta.preBalances[idx]) / LAMPORTS_PER_SOL;
+          }
+        }
+      } catch (e) {
+        log.warn(`_txMetaDelta attempt ${i + 1} failed: ${e.message}`);
+      }
+      if (i < 2) await sleep(1000);
+    }
+    return null;
+  }
+
   async _confirm(txid, maxWaitMs = 60000) {
     const start = Date.now();
     while (Date.now() - start < maxWaitMs) {
