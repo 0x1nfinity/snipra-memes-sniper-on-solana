@@ -117,6 +117,17 @@ export function tradeStats(mode) {
     .get(mode);
 }
 
+export function tradeStatsSince(mode, sinceTs) {
+  return initDb()
+    .prepare(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE WHEN pnl_pct >= 0 THEN 1 ELSE 0 END) AS wins,
+              SUM(pnl_native) AS total_pnl_native
+       FROM trades WHERE mode = ? AND closed_at >= ?`
+    )
+    .get(mode, sinceTs);
+}
+
 // ===== paper wallet =====
 
 export function paperWalletInit(chain, startBalance) {
