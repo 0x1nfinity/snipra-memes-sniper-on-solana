@@ -31,18 +31,8 @@ export function setStatusDeps(deps) {
   _sendDeps = deps;
 }
 
-export async function sendStatusReport(deps) {
-  const {
-    executor, telegram, openPositions, currentPnlPct,
-    moonbags, paused, screenBusy,
-  } = deps || _sendDeps;
-  // Jangan kirim laporan berkala saat auto-buy sedang paused.
-  if (paused()) return;
-  const cfg = getConfig();
-  // #8 prioritas: kalau screening sedang jalan, tunggu sampai selesai agar
-  // notif screening terkirim lebih dulu, baru laporan posisi.
-  for (let i = 0; i < 240 && screenBusy(); i++) await sleep(500);
-
+async function buildChainBlocks(deps, cfg) {
+  const { executor, openPositions, currentPnlPct } = deps;
   const bal = await executor.balances();
   const realizedByChain = Object.fromEntries(
     tradeStatsByChain(getActiveMode()).map((r) => [r.chain, r])
@@ -51,7 +41,6 @@ export async function sendStatusReport(deps) {
   for (const [chainKey, b] of Object.entries(bal)) {
     const sym = nativeSym(chainKey);
     const chainPos = openPositions().filter((x) => x.chain === chainKey);
-    // unrealized = Σ modal tersisa × pnl% posisi terbuka chain ini
     let unrealized = 0;
     for (const p of chainPos) {
       const invested = p.amountNative * (p.remainingPct / 100);
@@ -59,7 +48,6 @@ export async function sendStatusReport(deps) {
     }
     const r = realizedByChain[chainKey];
     const realized = r?.pnl_native ?? 0;
-    // daftar posisi terbuka chain ini
     const posLines = chainPos.length
       ? chainPos.map((p) => {
           const pnl = currentPnlPct(p);
@@ -73,10 +61,26 @@ export async function sendStatusReport(deps) {
       `Positions (${chainPos.length}):\n${posLines}`
     );
   }
+  return blocks;
+}
+
+async function prepareReport(deps) {
+  if (deps.paused()) return null;
+  const cfg = getConfig();
+  for (let i = 0; i < 240 && deps.screenBusy(); i++) await sleep(500);
+  const blocks = await buildChainBlocks(deps, cfg);
+  return { cfg, blocks };
+}
+
+export async function sendStatusReport(deps) {
+  const d = deps || _sendDeps;
+  const prepared = await prepareReport(d);
+  if (!prepared) return;
+  const { cfg, blocks } = prepared;
   const effMax = effectiveMax(cfg);
-  telegram.notify(
+  d.telegram.notify(
     `📊 Periodic report\n\n` +
-    `Positions ${openPositions().length}/${effMax} · Moonbag ${moonbags().length} · Auto-buy ${paused() ? 'off' : 'on'}\n\n` +
+    `Positions ${d.openPositions().length}/${effMax} · Moonbag ${d.moonbags().length} · Auto-buy ${d.paused() ? 'off' : 'on'}\n\n` +
     blocks.join('\n\n')
   );
 }
