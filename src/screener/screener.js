@@ -159,7 +159,8 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
 
   // Decision cache: skip token yang baru saja di-skip LLM & kondisi pasarnya belum bergeser
   // (hemat panggilan LLM — dicek SEBELUM pre-scorer karena tanpa biaya sama sekali).
-  if (cfg.llm.decisionCacheEnabled) {
+  // Hanya aktif saat LLM enabled (otherwise pure no-op, exact behavior = sebelum task ini).
+  if (cfg.llm.enabled && cfg.llm.decisionCacheEnabled) {
     pruneExpiredDecisionCache();
     passed = passed.filter((c) => {
       const cached = checkDecisionCache(c.chain, c.address, { mcap: c.marketCap, holders: c.holders });
@@ -172,7 +173,8 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
   }
 
   // Pre-scorer: gate rule-based gratis, tanpa API call tambahan.
-  if (cfg.screener.preScoreEnabled) {
+  // Hanya aktif saat LLM enabled (otherwise pure no-op, exact behavior = sebelum task ini).
+  if (cfg.llm.enabled && cfg.screener.preScoreEnabled) {
     passed = passed.filter((c) => {
       const r = preScore(c);
       c.preScore = r.score;
