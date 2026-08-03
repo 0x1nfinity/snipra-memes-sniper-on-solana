@@ -89,6 +89,37 @@ Reply ONLY JSON: {"action":"buy"|"skip","confidence":<0-1>,"risk":"low"|"medium"
     };
   }
 
+  async assessBatch(candidates, lessonBlock) {
+    const system = `You are an aggressive but disciplined memecoin sniper. Every token in the list ALREADY PASSED strict hard filters. Default decision per token is BUY. Only "skip" a token if there is a SERIOUS red flag for THAT specific token. Assess EACH token independently.`;
+    const list = candidates.map((c, i) =>
+      `[${i}] ${c.symbol} (${c.name}) on ${c.chain}, dex ${c.dexId}\n` +
+      `  Pair age: ${c.ageMinutes?.toFixed(0)} min | MC ${c.marketCap} | Liq ${c.liquidityUsd} | Vol24h ${c.volume24h}\n` +
+      `  Holders ${c.holders ?? 'unknown'} | top10 ${c.top10Pct != null ? c.top10Pct.toFixed(0) + '%' : 'unknown'} | tx24h ${c.traders24h} (buy/sell ${c.buySellRatio?.toFixed(2)})\n` +
+      `  Price change: 1h ${c.priceChange?.h1}% | 6h ${c.priceChange?.h6}% | 24h ${c.priceChange?.h24}%\n` +
+      `  Security: honeypot=${c.security?.honeypot ?? 'unknown'}, mintable=${c.security?.mintable ?? 'unknown'}`
+    ).join('\n\n');
+    const user = `TOKENS:\n${list}\n\nLESSONS FROM PAST TRADES:\n${lessonBlock}\n\nReply ONLY JSON: {"verdicts":[{"index":<int>,"action":"buy"|"skip","confidence":<0-1>,"risk":"low"|"medium"|"high","reason":"<1 short sentence, Indonesian>"}, ...]} — exactly one entry per token index (0 to ${candidates.length - 1}).`;
+
+    const resp = await this._request('assess_batch', system, user, {
+      verdicts: 'array of {index: int, action: "buy"|"skip", confidence: number 0-1, risk: "low"|"medium"|"high", reason: string}',
+    });
+
+    const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+    const out = candidates.map(() => ({ action: 'buy', confidence: 0.5, risk: 'medium', reason: 'LLM unavailable (failOpen)' }));
+    if (!resp.ok || !Array.isArray(resp.result?.verdicts)) return out;
+    for (const v of resp.result.verdicts) {
+      const i = Number(v.index);
+      if (!Number.isInteger(i) || i < 0 || i >= out.length) continue;
+      out[i] = {
+        action: v.action === 'skip' ? 'skip' : 'buy',
+        confidence: clamp(Number(v.confidence) || 0, 0, 1),
+        risk: ['low', 'medium', 'high'].includes(v.risk) ? v.risk : 'medium',
+        reason: String(v.reason || '').slice(0, 300),
+      };
+    }
+    return out;
+  }
+
   async recordLesson(trade) {
     const v = trade.llmVerdict;
     const system = 'You are a memecoin trading analyst. Extract one short, actionable lesson from this closed trade.';

@@ -13,18 +13,46 @@ const PROVIDERS = {
   },
 };
 
+/**
+ * Parse the LLM's {"verdicts":[{index, action, confidence, risk, reason}, ...]}
+ * response into a fixed-length array aligned to the input candidate order.
+ * Missing/invalid entries default to a safe "buy" (matches assessToken()'s
+ * single-candidate default — the hard filters already did the heavy lifting).
+ */
+export function parseBatchVerdicts(parsed, count) {
+  const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+  const out = Array.from({ length: count }, () => ({
+    action: 'buy',
+    confidence: 0.5,
+    risk: 'medium',
+    reason: 'no verdict returned',
+  }));
+  const verdicts = Array.isArray(parsed?.verdicts) ? parsed.verdicts : [];
+  for (const v of verdicts) {
+    const i = Number(v.index);
+    if (!Number.isInteger(i) || i < 0 || i >= count) continue;
+    out[i] = {
+      action: v.action === 'skip' ? 'skip' : 'buy',
+      confidence: clamp(Number(v.confidence) || 0, 0, 1),
+      risk: ['low', 'medium', 'high'].includes(v.risk) ? v.risk : 'medium',
+      reason: String(v.reason || '').slice(0, 300),
+    };
+  }
+  return out;
+}
+
 export class HttpBackend {
-  async _completion(messages, { json = false, tools = null } = {}) {
+  async _completion(messages, { json = false, tools = null, model = null } = {}) {
     const cfg = getConfig().llm;
     const p = PROVIDERS[cfg.provider];
     if (!p) throw new Error(`unknown LLM provider: ${cfg.provider}`);
     const key = process.env[p.keyEnv];
     if (!key) throw new Error(`${p.keyEnv} is empty`);
-    const model =
-      cfg.provider === 'deepseek' && cfg.model?.includes('/')
+    const resolvedModel =
+      cfg.provider === 'deepseek' && (model || cfg.model)?.includes('/')
         ? p.fallbackModel
-        : cfg.model || p.fallbackModel;
-    const body = { model, messages, temperature: 0.2, max_tokens: 700 };
+        : model || cfg.model || p.fallbackModel;
+    const body = { model: resolvedModel, messages, temperature: 0.2, max_tokens: 700 };
     if (json) body.response_format = { type: 'json_object' };
     if (tools?.length) body.tools = tools;
     const res = await fetchJson(p.url, {
@@ -41,8 +69,8 @@ export class HttpBackend {
     return msg;
   }
 
-  async _chat(messages, { json = true } = {}) {
-    const msg = await this._completion(messages, { json });
+  async _chat(messages, { json = true, model = null } = {}) {
+    const msg = await this._completion(messages, { json, model });
     if (!msg.content) throw new Error('respons LLM tanpa content');
     return msg.content;
   }
@@ -72,6 +100,30 @@ Reply ONLY JSON: {"action":"buy"|"skip","confidence":<0-1>,"risk":"low"|"medium"
       risk: ['low', 'medium', 'high'].includes(p.risk) ? p.risk : 'medium',
       reason: String(p.reason || '').slice(0, 300),
     };
+  }
+
+  async assessBatch(candidates, lessonBlock, fmtUsd, { model } = {}) {
+    const list = candidates.map((c, i) =>
+      `[${i}] ${c.symbol} (${c.name}) on ${c.chain}, dex ${c.dexId}\n` +
+      `  Pair age: ${c.ageMinutes?.toFixed(0)} min | MC ${fmtUsd(c.marketCap)} | Liq ${fmtUsd(c.liquidityUsd)} | Vol24h ${fmtUsd(c.volume24h)}\n` +
+      `  Holders ${c.holders ?? 'unknown'} | top10 ${c.top10Pct != null ? c.top10Pct.toFixed(0) + '%' : 'unknown'} | tx24h ${c.traders24h} (buy/sell ${c.buySellRatio?.toFixed(2)})\n` +
+      `  Price change: 1h ${c.priceChange?.h1}% | 6h ${c.priceChange?.h6}% | 24h ${c.priceChange?.h24}%\n` +
+      `  Security: honeypot=${c.security?.honeypot ?? 'unknown'}, mintable=${c.security?.mintable ?? 'unknown'}`
+    ).join('\n\n');
+
+    const prompt = `You are an aggressive but disciplined memecoin sniper. Every token below ALREADY PASSED strict hard filters (liquidity, volume, age, market cap, holder count, holder concentration, honeypot check). Your default decision per token is BUY. Only "skip" a token if there is a SERIOUS red flag for THAT token. Assess EACH token INDEPENDENTLY — do not compare them against each other or ration your "buy" verdicts.
+
+TOKENS:
+${list}
+
+LESSONS FROM PAST TRADES (consider them):
+${lessonBlock}
+
+Reply ONLY JSON: {"verdicts":[{"index":<int>,"action":"buy"|"skip","confidence":<0-1>,"risk":"low"|"medium"|"high","reason":"<1 short sentence, Indonesian>"}, ...]} — exactly one entry per token index (0 to ${candidates.length - 1}).`;
+
+    const content = await this._chat([{ role: 'user', content: prompt }], { model });
+    const parsed = JSON.parse(content);
+    return parseBatchVerdicts(parsed, candidates.length);
   }
 
   async recordLesson(trade) {
