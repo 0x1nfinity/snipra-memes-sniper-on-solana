@@ -1,4 +1,4 @@
-import { GENE_SPACE } from './darwin.js';
+import { GENE_SPACE, readGeneBaseline } from './darwin.js';
 import { fmtPct } from '../utils.js';
 import { getActiveMode } from '../config.js';
 import { createLogger } from '../logger.js';
@@ -25,11 +25,13 @@ function fmtGene(v) {
 }
 
 // Susun daftar "gen: sekarang → usulan" hanya untuk gen yang benar-benar beda.
-function geneDiffLines(currentFilters, proposed) {
+function geneDiffLines(cfg, proposed) {
   const lines = [];
   for (const [name, val] of Object.entries(proposed || {})) {
     if (!(name in GENE_SPACE)) continue;
-    const cur = currentFilters[name];
+    // Baseline dibaca lewat GENE_CONFIG_PATH: 10 gen screening dari screener.filters,
+    // 3 gen exit dari trading.stopLossPct / trailing.*.
+    const cur = readGeneBaseline(cfg, name);
     const nv = Number(val);
     if (!isFinite(nv)) continue;
     // anggap sama bila selisih < 1% (hindari noise pembulatan)
@@ -53,7 +55,7 @@ export async function runEvolve(trigger = 'manual', deps) {
 
   // ── sisi Darwin: genome terbaik yang sudah teruji ──
   const best = darwin.bestProven();
-  const darwinLines = best ? geneDiffLines(filters, best.genes) : [];
+  const darwinLines = best ? geneDiffLines(cfg, best.genes) : [];
 
   // ── sisi LLM: rekomendasi berbasis trade + performa genome + lessons ──
   let llmLines = [];
@@ -62,7 +64,12 @@ export async function runEvolve(trigger = 'manual', deps) {
     try {
       const suggestion = await llm.suggestGenes({
         geneSpace: GENE_SPACE,
-        currentFilters: filters,
+        currentFilters: {
+          ...filters,
+          stopLossPct: cfg.trading.stopLossPct,
+          trailingActivateGainPct: cfg.trailing.activateGainPct,
+          trailingTrailPct: cfg.trailing.trailPct,
+        },
         genomes: st.genomes.map((g) => ({ id: g.id, fitness: +g.fitness.toFixed(2), trades: g.trades, avgPnl: +g.avgPnl.toFixed(1), genes: g.genes })),
         trades: recentTrades(getActiveMode(), 20).map((t) => ({
           symbol: t.symbol, chain: t.chain, pnlPct: +(t.pnl_pct ?? 0).toFixed(1),
@@ -71,7 +78,7 @@ export async function runEvolve(trigger = 'manual', deps) {
         lessonsText: llm.getLessons(10).map((l) => `[${l.outcome}] ${l.text}`).join('\n'),
       });
       if (suggestion?.genes) {
-        llmLines = geneDiffLines(filters, suggestion.genes);
+        llmLines = geneDiffLines(cfg, suggestion.genes);
         rationale = suggestion.rationale;
         log.info(`LLM suggested filter: ${JSON.stringify(suggestion.genes)} — ${rationale}`);
       }

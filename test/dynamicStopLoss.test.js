@@ -26,6 +26,17 @@ test('volPercent is clamped to [minVolPercent, maxVolPercent] before applying th
   assert.equal(extreme, -55);
 });
 
+// dynamicSl.enabled defaults to false (opt-in), dan _applyRules() memakai pola
+// baseSlPct = pos.slPct ?? cfg.trading.stopLossPct. Jadi pada jalur DEFAULT, SL efektif
+// harus mengikuti baseline apa pun yang diberikan — termasuk slPct hasil genome Darwin
+// yang lebih ketat dari cfg.trading.stopLossPct — bukan balik ke nilai config datar.
+test('honors a genome-tightened baseSlPercent when dynamicSl is a no-op (no vol data)', () => {
+  // genome mempersempit SL dari config -35 menjadi -20 (lihat resolveExitGenome)
+  assert.equal(dynamicStopLossPercent({ baseSlPercent: -20, volPercent: null, ...DEFAULTS }), -20);
+  assert.equal(dynamicStopLossPercent({ baseSlPercent: -20, volPercent: 0, ...DEFAULTS }), -20);
+  assert.equal(dynamicStopLossPercent({ baseSlPercent: -20, volPercent: undefined, ...DEFAULTS }), -20);
+});
+
 test('invalid baseSlPercent falls back to -25', () => {
   assert.equal(dynamicStopLossPercent({ baseSlPercent: NaN, volPercent: 10, ...DEFAULTS }), -25);
 });

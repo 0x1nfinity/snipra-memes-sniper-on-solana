@@ -40,21 +40,31 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
     throw new Error(`max positions (${effMax}) reached`);
 
   if (cfg.trading.buyFreshnessCheck) {
-    const res = evaluate(c, cfg.screener.filters);
+    // Ambil ulang data market TERBARU — kandidat auto-buy bisa sudah basi/rug sejak
+    // screening. Merge hasil fresh ke c agar entryPrice memakai harga terbaru; field
+    // pipeline (exitGenes/genomeId/llmVerdict) tidak ada di hasil resolveCandidate
+    // sehingga otomatis selamat dari merge.
+    const fresh = await resolveCandidate(chainKey, c.address);
+    const res = evaluate(fresh, cfg.screener.filters);
     if (!res.pass) throw new Error(`freshness recheck failed: ${res.reasons.join(', ')}`);
+    Object.assign(c, fresh);
   }
 
   breaker.check(chainKey);
 
   const amount = amountNative;
-  const maxRetries = cfg.trading.buyMaxRetries ?? 0;
+  // Math.max(0, …): buyMaxRetries negatif (salah konfigurasi) jangan sampai membuat
+  // loop tidak jalan sama sekali dan res tetap undefined.
+  const maxRetries = Math.max(0, cfg.trading.buyMaxRetries ?? 0);
   const retryDelayMs = cfg.trading.buyRetryDelayMs ?? 2000;
   let res;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       res = await executor.buy(chainKey, c.address, amount, { labels: c.labels });
+      if (attempt > 0) log.info(`buy retry #${attempt} succeeded for ${c.symbol}`);
       break;
     } catch (e) {
+      if (/not confirmed/i.test(e.message)) throw e; // tx sudah tersiar ke jaringan — jangan retry, risiko beli ganda
       const isTransient = TRANSIENT_BUY_ERROR_RE.test(e.message);
       if (!isTransient || attempt >= maxRetries) throw e;
       log.debug(`buy retry #${attempt + 1} for ${c.symbol} in ${retryDelayMs}ms: ${e.message}`);

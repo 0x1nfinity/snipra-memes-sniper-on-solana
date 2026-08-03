@@ -29,7 +29,7 @@ export const GENE_SPACE = {
 
 // Path config tempat baseline tiap gen dibaca — 10 gen pertama masih dari
 // screener.filters (perilaku lama tidak berubah), 3 gen baru dari trading/trailing.
-const GENE_CONFIG_PATH = {
+export const GENE_CONFIG_PATH = {
   minVolume24hUsd: 'screener.filters.minVolume24hUsd',
   minAgeHours: 'screener.filters.minAgeHours',
   maxAgeHours: 'screener.filters.maxAgeHours',
@@ -45,7 +45,7 @@ const GENE_CONFIG_PATH = {
   trailingTrailPct: 'trailing.trailPct',
 };
 
-function readGeneBaseline(cfg, name) {
+export function readGeneBaseline(cfg, name) {
   return GENE_CONFIG_PATH[name].split('.').reduce((o, k) => o?.[k], cfg);
 }
 

@@ -168,11 +168,16 @@ export class PositionManager {
                   const fallbackPrice = nativePx * solUsd;
                   if (fallbackPrice > 0) {
                     const prev = p.currentPrice;
-                    if (updatePrice(p, fallbackPrice) && prev > 0) {
+                    // Delta tick hanya bermakna bila SUMBER harga sama dengan tick lalu:
+                    // mid-price DexScreener vs quote jual Jupiter punya basis berbeda,
+                    // membandingkannya menghasilkan drop palsu yang memicu flash-drop/SL.
+                    const sameSource = p._priceSource === 'quote';
+                    if (updatePrice(p, fallbackPrice) && prev > 0 && sameSource) {
                       p._tickDropPct = Math.max(0, ((prev - fallbackPrice) / prev) * 100);
                     } else {
                       p._tickDropPct = 0;
                     }
+                    p._priceSource = 'quote';
                     continue;
                   }
                 }
@@ -191,12 +196,15 @@ export class PositionManager {
             continue;
           }
           const prev = p.currentPrice;
-          if (updatePrice(p, price) && prev > 0) {
-            // Penurunan dalam SATU tick (positif = turun) — dipakai deteksi flash/glitch di SL
+          const sameSource = p._priceSource === 'dex';
+          if (updatePrice(p, price) && prev > 0 && sameSource) {
+            // Penurunan dalam SATU tick (positif = turun) — dipakai deteksi flash/glitch di SL.
+            // Hanya dihitung bila tick sebelumnya juga dari DexScreener (lihat catatan di atas).
             p._tickDropPct = Math.max(0, ((prev - price) / prev) * 100);
           } else {
             p._tickDropPct = 0;
           }
+          p._priceSource = 'dex';
         }
         for (const m of moon) {
           const { price, liqUsd } = priceOf(m);

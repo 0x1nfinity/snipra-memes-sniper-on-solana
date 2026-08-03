@@ -28,9 +28,6 @@ function mergeGenome(baseFilters, genes) {
   return merged;
 }
 
-const EXIT_MIN_FIELDS = ['stopLossPct'];                                  // kurang negatif = lebih ketat -> Math.max
-const EXIT_MAX_FIELDS = ['trailingActivateGainPct', 'trailingTrailPct'];  // lebih kecil = lebih ketat -> Math.min
-
 /**
  * Resolusi parameter exit dari genome Darwin, dengan filosofi yang sama seperti
  * mergeGenome(): config user = batas keras, genome hanya boleh memperketat (SL
