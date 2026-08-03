@@ -175,7 +175,8 @@ export class Darwin {
    * Return ringkasan utk notifikasi.
    */
   evolve({ injectGenes = [] } = {}) {
-    const cfg = getConfig().darwin;
+    const fullCfg = getConfig();
+    const cfg = fullCfg.darwin;
     const ranked = [...db.genomes].sort((a, b) => this.fitness(b) - this.fitness(a));
     const survivors = ranked.slice(0, Math.max(2, Math.floor(ranked.length / 2)));
     const best = ranked[0];
@@ -203,7 +204,9 @@ export class Darwin {
       const b = pick(survivors);
       const genes = {};
       for (const name of Object.keys(GENE_SPACE)) {
-        const inherited = Math.random() < 0.5 ? a.genes[name] : b.genes[name];
+        const inherited = (Math.random() < 0.5 ? a.genes[name] : b.genes[name])
+          ?? readGeneBaseline(fullCfg, name)
+          ?? (GENE_SPACE[name].min + GENE_SPACE[name].max) / 2;
         genes[name] = mutateGene(name, inherited, cfg.mutationRate);
       }
       next.push(this._newGenome(genes));

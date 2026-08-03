@@ -43,9 +43,9 @@ export function resolveExitGenome(cfg, genes) {
     trailingActivateGainPct: cfg.trailing.activateGainPct,
     trailingTrailPct: cfg.trailing.trailPct,
   };
-  if (genes.stopLossPct != null) out.slPct = Math.max(cfg.trading.stopLossPct, genes.stopLossPct);
-  if (genes.trailingActivateGainPct != null) out.trailingActivateGainPct = Math.min(cfg.trailing.activateGainPct, genes.trailingActivateGainPct);
-  if (genes.trailingTrailPct != null) out.trailingTrailPct = Math.min(cfg.trailing.trailPct, genes.trailingTrailPct);
+  if (Number.isFinite(genes.stopLossPct)) out.slPct = Math.max(cfg.trading.stopLossPct, genes.stopLossPct);
+  if (Number.isFinite(genes.trailingActivateGainPct)) out.trailingActivateGainPct = Math.min(cfg.trailing.activateGainPct, genes.trailingActivateGainPct);
+  if (Number.isFinite(genes.trailingTrailPct)) out.trailingTrailPct = Math.min(cfg.trailing.trailPct, genes.trailingTrailPct);
   return out;
 }
 

@@ -32,3 +32,11 @@ test('null/undefined individual genes leave that field at baseline', () => {
   assert.equal(r.slPct, -20);
   assert.equal(r.trailingActivateGainPct, 10);
 });
+
+test('NaN gene value falls back to baseline instead of propagating', () => {
+  const r = resolveExitGenome(cfg(), { stopLossPct: NaN, trailingActivateGainPct: NaN, trailingTrailPct: NaN });
+  assert.equal(r.slPct, -35);
+  assert.equal(r.trailingActivateGainPct, 10);
+  assert.equal(r.trailingTrailPct, 5);
+  assert.ok(!Number.isNaN(r.slPct) && !Number.isNaN(r.trailingActivateGainPct) && !Number.isNaN(r.trailingTrailPct));
+});
