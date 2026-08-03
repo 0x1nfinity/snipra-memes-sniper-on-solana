@@ -2,15 +2,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseBatchVerdicts } from '../src/llm/http-backend.js';
 
-test('maps verdicts by index, fills missing with a safe buy default', () => {
+test('maps verdicts by index, fills missing indices with confidence 0 (rejected)', () => {
   const parsed = { verdicts: [{ index: 1, action: 'skip', confidence: 0.9, risk: 'high', reason: 'r' }] };
   const out = parseBatchVerdicts(parsed, 3);
   assert.equal(out.length, 3);
-  assert.equal(out[0].action, 'buy'); // default, no verdict returned for index 0
   assert.equal(out[0].reason, 'no verdict returned');
+  // Index yang tidak dijawab LLM HARUS gagal gate (minConfidence default 0.35),
+  // bukan lolos sebagai buy 0.5 seperti sebelumnya.
+  assert.equal(out[0].confidence, 0);
+  assert.equal(out[2].confidence, 0);
   assert.equal(out[1].action, 'skip');
   assert.equal(out[1].confidence, 0.9);
-  assert.equal(out[2].action, 'buy'); // default, no verdict returned for index 2
 });
 
 test('clamps confidence to 0-1 and coerces unknown action/risk to safe defaults', () => {

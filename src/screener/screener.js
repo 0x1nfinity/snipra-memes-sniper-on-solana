@@ -196,26 +196,13 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
     const batchSize = Math.max(1, cfg.llm.batchSize || 1);
     for (let i = 0; i < passed.length; i += batchSize) {
       const batch = passed.slice(i, i + batchSize);
+      // try HANYA membungkus panggilan LLM. Kalau post-processing di bawah ikut
+      // dibungkus, error di situ (mis. tulis decision cache gagal) akan salah
+      // dianggap "LLM gagal" dan mendorong SELURUH batch ke `gated` untuk kedua
+      // kalinya — duplikat + token yang justru di-skip LLM ikut lolos.
+      let verdicts;
       try {
-        const verdicts = await llm.assessBatch(batch);
-        batch.forEach((c, idx) => {
-          const v = verdicts[idx];
-          c.llmVerdict = v;
-          if (v.action === 'buy' && v.confidence >= cfg.llm.minConfidence) {
-            gated.push(c);
-          } else {
-            log.info(`${c.symbol} rejected by LLM (${v.action}, conf ${v.confidence}): ${v.reason}`);
-            if (cfg.llm.decisionCacheEnabled) {
-              storeDecisionCache(c.chain, c.address, 'skip', {
-                confidence: v.confidence,
-                reason: v.reason,
-                mcap: c.marketCap,
-                holders: c.holders,
-                ttlMs: cfg.llm.decisionCacheSkipTtlMin * 60000,
-              });
-            }
-          }
-        });
+        verdicts = await llm.assessBatch(batch);
       } catch (e) {
         // failOpen=true (default): LLM error → seluruh batch lolos (backward compat)
         // failOpen=false: LLM error → seluruh batch ditolak (lebih aman)
@@ -225,7 +212,30 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
         } else {
           log.warn(`LLM batch failed (${batch.length} candidates), rejected (failOpen=false):`, e.message);
         }
+        continue;
       }
+      batch.forEach((c, idx) => {
+        const v = verdicts[idx];
+        c.llmVerdict = v;
+        if (v.action === 'buy' && v.confidence >= cfg.llm.minConfidence) {
+          gated.push(c);
+        } else {
+          log.info(`${c.symbol} rejected by LLM (${v.action}, conf ${v.confidence}): ${v.reason}`);
+          if (cfg.llm.decisionCacheEnabled) {
+            try {
+              storeDecisionCache(c.chain, c.address, 'skip', {
+                confidence: v.confidence,
+                reason: v.reason,
+                mcap: c.marketCap,
+                holders: c.holders,
+                ttlMs: cfg.llm.decisionCacheSkipTtlMin * 60000,
+              });
+            } catch (cacheErr) {
+              log.warn(`gagal simpan decision cache utk ${c.symbol}:`, cacheErr.message);
+            }
+          }
+        }
+      });
     }
     passed = gated;
   }

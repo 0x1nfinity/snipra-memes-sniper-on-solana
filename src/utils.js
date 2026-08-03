@@ -16,6 +16,16 @@ export function fmtPct(n) {
   return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`;
 }
 
+/**
+ * Bersihkan metadata token (symbol/name) sebelum masuk prompt LLM.
+ * Metadata on-chain sepenuhnya dikontrol attacker — newline + teks yang meniru
+ * instruksi bisa dipakai untuk prompt injection (khususnya di batch, di mana satu
+ * token jahat bisa memanipulasi verdict token LAIN dalam batch yang sama).
+ */
+export function sanitizePromptField(s, maxLen = 32) {
+  return String(s ?? '').replace(/[\r\n]+/g, ' ').slice(0, maxLen);
+}
+
 export function shortAddr(a) {
   if (!a) return '?';
   return a.length > 12 ? `${a.slice(0, 5)}…${a.slice(-4)}` : a;

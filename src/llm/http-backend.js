@@ -1,5 +1,5 @@
 import { getConfig } from '../config.js';
-import { fetchJson } from '../utils.js';
+import { fetchJson, sanitizePromptField } from '../utils.js';
 
 const PROVIDERS = {
   openrouter: {
@@ -16,14 +16,16 @@ const PROVIDERS = {
 /**
  * Parse the LLM's {"verdicts":[{index, action, confidence, risk, reason}, ...]}
  * response into a fixed-length array aligned to the input candidate order.
- * Missing/invalid entries default to a safe "buy" (matches assessToken()'s
- * single-candidate default — the hard filters already did the heavy lifting).
+ * Index yang TIDAK dijawab LLM di-default ke confidence 0 (= ditolak gate), bukan
+ * buy 0.5 — respons batch parsial (mis. model murah yang truncate) tidak boleh
+ * diam-diam membeli token yang belum benar-benar dinilai. Sejajar dengan
+ * assessToken(), di mana confidence kosong jadi Number(undefined) || 0 = 0.
  */
 export function parseBatchVerdicts(parsed, count) {
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
   const out = Array.from({ length: count }, () => ({
     action: 'buy',
-    confidence: 0.5,
+    confidence: 0,
     risk: 'medium',
     reason: 'no verdict returned',
   }));
@@ -42,7 +44,7 @@ export function parseBatchVerdicts(parsed, count) {
 }
 
 export class HttpBackend {
-  async _completion(messages, { json = false, tools = null, model = null } = {}) {
+  async _completion(messages, { json = false, tools = null, model = null, maxTokens = 700 } = {}) {
     const cfg = getConfig().llm;
     const p = PROVIDERS[cfg.provider];
     if (!p) throw new Error(`unknown LLM provider: ${cfg.provider}`);
@@ -52,7 +54,7 @@ export class HttpBackend {
       cfg.provider === 'deepseek' && (model || cfg.model)?.includes('/')
         ? p.fallbackModel
         : model || cfg.model || p.fallbackModel;
-    const body = { model: resolvedModel, messages, temperature: 0.2, max_tokens: 700 };
+    const body = { model: resolvedModel, messages, temperature: 0.2, max_tokens: maxTokens };
     if (json) body.response_format = { type: 'json_object' };
     if (tools?.length) body.tools = tools;
     const res = await fetchJson(p.url, {
@@ -69,8 +71,8 @@ export class HttpBackend {
     return msg;
   }
 
-  async _chat(messages, { json = true, model = null } = {}) {
-    const msg = await this._completion(messages, { json, model });
+  async _chat(messages, { json = true, model = null, maxTokens = 700 } = {}) {
+    const msg = await this._completion(messages, { json, model, maxTokens });
     if (!msg.content) throw new Error('respons LLM tanpa content');
     return msg.content;
   }
@@ -79,7 +81,7 @@ export class HttpBackend {
     const prompt = `You are an aggressive but disciplined memecoin sniper. The token below ALREADY PASSED all strict hard filters (liquidity, volume, age, market cap, holder count, holder concentration, honeypot check). Your default decision is BUY. Only choose "skip" if there is a SERIOUS red flag (e.g. clear dump in progress, extreme holder concentration, obvious rug pattern). Do NOT reject just because liquidity/market cap is "moderate" — the filters already guarantee a floor. Express your view through confidence only; position size is fixed by config.
 
 TOKEN:
-- ${c.symbol} (${c.name}) on ${c.chain}, dex ${c.dexId}
+- ${sanitizePromptField(c.symbol)} (${sanitizePromptField(c.name)}) on ${c.chain}, dex ${c.dexId}
 - Pair age: ${c.ageMinutes?.toFixed(0)} min
 - Market cap ${fmtUsd(c.marketCap)} | Liquidity ${fmtUsd(c.liquidityUsd)} | Vol24h ${fmtUsd(c.volume24h)} (vol/liq ${(c.volume24h / (c.liquidityUsd || 1)).toFixed(2)})
 - Holders ${c.holders ?? 'unknown'} | top10 ${c.top10Pct != null ? c.top10Pct.toFixed(0) + '%' : 'unknown'} | tx24h ${c.traders24h} (buy/sell ${c.buySellRatio?.toFixed(2)})
@@ -104,7 +106,7 @@ Reply ONLY JSON: {"action":"buy"|"skip","confidence":<0-1>,"risk":"low"|"medium"
 
   async assessBatch(candidates, lessonBlock, fmtUsd, { model } = {}) {
     const list = candidates.map((c, i) =>
-      `[${i}] ${c.symbol} (${c.name}) on ${c.chain}, dex ${c.dexId}\n` +
+      `[${i}] ${sanitizePromptField(c.symbol)} (${sanitizePromptField(c.name)}) on ${c.chain}, dex ${c.dexId}\n` +
       `  Pair age: ${c.ageMinutes?.toFixed(0)} min | MC ${fmtUsd(c.marketCap)} | Liq ${fmtUsd(c.liquidityUsd)} | Vol24h ${fmtUsd(c.volume24h)}\n` +
       `  Holders ${c.holders ?? 'unknown'} | top10 ${c.top10Pct != null ? c.top10Pct.toFixed(0) + '%' : 'unknown'} | tx24h ${c.traders24h} (buy/sell ${c.buySellRatio?.toFixed(2)})\n` +
       `  Price change: 1h ${c.priceChange?.h1}% | 6h ${c.priceChange?.h6}% | 24h ${c.priceChange?.h24}%\n` +
@@ -121,7 +123,10 @@ ${lessonBlock}
 
 Reply ONLY JSON: {"verdicts":[{"index":<int>,"action":"buy"|"skip","confidence":<0-1>,"risk":"low"|"medium"|"high","reason":"<1 short sentence, Indonesian>"}, ...]} — exactly one entry per token index (0 to ${candidates.length - 1}).`;
 
-    const content = await this._chat([{ role: 'user', content: prompt }], { model });
+    // Budget output ikut jumlah kandidat — 700 (default single-candidate) bisa
+    // memotong respons batch besar, dan JSON terpotong = seluruh batch gagal parse.
+    const maxTokens = Math.min(4000, 300 + 120 * candidates.length);
+    const content = await this._chat([{ role: 'user', content: prompt }], { model, maxTokens });
     const parsed = JSON.parse(content);
     return parseBatchVerdicts(parsed, candidates.length);
   }
