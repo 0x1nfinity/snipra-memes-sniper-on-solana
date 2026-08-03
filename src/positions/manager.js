@@ -234,9 +234,10 @@ export class PositionManager {
 
         // ===== 1. STOP LOSS (dinamis + konfirmasi anti-glitch/flash-dump) =====
         const dsl = cfg.trading.dynamicSl;
+        const baseSlPct = pos.slPct ?? cfg.trading.stopLossPct;
         const effectiveSlPct = dsl?.enabled
           ? dynamicStopLossPercent({
-              baseSlPercent: cfg.trading.stopLossPct,
+              baseSlPercent: baseSlPct,
               volPercent: pos._volPct,
               multiplier: dsl.multiplier,
               floorPercent: dsl.floorPct,
@@ -244,7 +245,7 @@ export class PositionManager {
               minVolPercent: dsl.minVolPct,
               maxVolPercent: dsl.maxVolPct,
             })
-          : cfg.trading.stopLossPct;
+          : baseSlPct;
         if (pnl <= effectiveSlPct) {
           const flashDrop = cfg.trading.slFlashDropPct ?? 0;
           const sudden = flashDrop > 0 && (pos._tickDropPct ?? 0) >= flashDrop;
@@ -258,7 +259,7 @@ export class PositionManager {
             continue;
           }
           pos._slPending = null;
-          await this._closeAll(pos, effectiveSlPct !== cfg.trading.stopLossPct ? `SL (dynamic ${effectiveSlPct.toFixed(1)}%)` : 'SL');
+          await this._closeAll(pos, effectiveSlPct !== baseSlPct ? `SL (dynamic ${effectiveSlPct.toFixed(1)}%)` : 'SL');
           continue;
         }
         // Harga pulih di atas SL padahal tadi sempat pending → glitch/flash terkonfirmasi
@@ -303,16 +304,18 @@ export class PositionManager {
         const tr = cfg.trailing;
         if (tr.enabled) {
           const postTp = pos.tpHit.length > 0;
+          const activateGainPct = pos.trailingActivateGainPct ?? tr.activateGainPct;
+          const trailPct = pos.trailingTrailPct ?? tr.trailPct;
           const peakGain = ((pos.peakPrice - pos.entryPrice) / pos.entryPrice) * 100;
-          if (!pos.trailingActive && (postTp || peakGain >= tr.activateGainPct)) {
+          if (!pos.trailingActive && (postTp || peakGain >= activateGainPct)) {
             pos.trailingActive = true;
             this.notify(
-              `📈 Trailing — Active\n\n${this._link(pos)} — peak ${fmtPct(peakGain)}, trail ${tr.trailPct}%${postTp ? ' (post-TP)' : ''}`
+              `📈 Trailing — Active\n\n${this._link(pos)} — peak ${fmtPct(peakGain)}, trail ${trailPct}%${postTp ? ' (post-TP)' : ''}`
             );
           }
           if (pos.trailingActive) {
             const dropFromPeak = ((pos.peakPrice - pos.currentPrice) / pos.peakPrice) * 100;
-            if (dropFromPeak >= tr.trailPct) {
+            if (dropFromPeak >= trailPct) {
               const reason = `Trailing stop: dropped ${dropFromPeak.toFixed(1)}% from peak`;
               if (postTp && tr.moonbagPct > 0 && pos.remainingPct > tr.moonbagPct) {
                 await this._exitToMoonbag(pos, reason, tr.moonbagPct);

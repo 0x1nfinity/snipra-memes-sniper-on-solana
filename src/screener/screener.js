@@ -28,6 +28,27 @@ function mergeGenome(baseFilters, genes) {
   return merged;
 }
 
+const EXIT_MIN_FIELDS = ['stopLossPct'];                                  // kurang negatif = lebih ketat -> Math.max
+const EXIT_MAX_FIELDS = ['trailingActivateGainPct', 'trailingTrailPct'];  // lebih kecil = lebih ketat -> Math.min
+
+/**
+ * Resolusi parameter exit dari genome Darwin, dengan filosofi yang sama seperti
+ * mergeGenome(): config user = batas keras, genome hanya boleh memperketat (SL
+ * lebih rapat ke 0, trailing mengunci profit lebih cepat/dekat) — tidak pernah
+ * lebih longgar dari baseline config.
+ */
+export function resolveExitGenome(cfg, genes) {
+  const out = {
+    slPct: cfg.trading.stopLossPct,
+    trailingActivateGainPct: cfg.trailing.activateGainPct,
+    trailingTrailPct: cfg.trailing.trailPct,
+  };
+  if (genes.stopLossPct != null) out.slPct = Math.max(cfg.trading.stopLossPct, genes.stopLossPct);
+  if (genes.trailingActivateGainPct != null) out.trailingActivateGainPct = Math.min(cfg.trailing.activateGainPct, genes.trailingActivateGainPct);
+  if (genes.trailingTrailPct != null) out.trailingTrailPct = Math.min(cfg.trailing.trailPct, genes.trailingTrailPct);
+  return out;
+}
+
 /** harga X jam lalu diperkirakan dari priceChange DexScreener (data riil) */
 function priceAgo(now, changePct) {
   if (changePct == null) return null;
@@ -93,10 +114,12 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
   // Filter aktif: config user = batas keras; genome darwin hanya boleh memperketat
   let filters = { ...cfg.screener.filters };
   let genomeId = null;
+  let exitGenes = null;
   if (cfg.darwin.enabled && darwin) {
     const g = darwin.pickGenome();
     filters = mergeGenome(cfg.screener.filters, g.genes);
     genomeId = g.id;
+    exitGenes = resolveExitGenome(cfg, g.genes);
   }
 
   let raw = [];
@@ -240,6 +263,7 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
     passed = gated;
   }
 
+  for (const c of passed) c.exitGenes = exitGenes;
   log.info(`final candidates: ${passed.map((c) => c.symbol).join(', ') || '(none)'}`);
   return { candidates: passed, genomeId, scanned: raw.length };
 }

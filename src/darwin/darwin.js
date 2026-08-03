@@ -22,7 +22,32 @@ export const GENE_SPACE = {
   minTraders24h: { min: 50, max: 2000, sigma: 0.3 },
   minBuySellRatio: { min: 0.5, max: 2.0, sigma: 0.15 },
   minVolLiqRatio: { min: 0.1, max: 3.0, sigma: 0.25 },
+  stopLossPct: { min: -60, max: -15, sigma: 0.2 },
+  trailingActivateGainPct: { min: 5, max: 40, sigma: 0.25 },
+  trailingTrailPct: { min: 3, max: 15, sigma: 0.25 },
 };
+
+// Path config tempat baseline tiap gen dibaca — 10 gen pertama masih dari
+// screener.filters (perilaku lama tidak berubah), 3 gen baru dari trading/trailing.
+const GENE_CONFIG_PATH = {
+  minVolume24hUsd: 'screener.filters.minVolume24hUsd',
+  minAgeHours: 'screener.filters.minAgeHours',
+  maxAgeHours: 'screener.filters.maxAgeHours',
+  minLiquidityUsd: 'screener.filters.minLiquidityUsd',
+  minMarketCapUsd: 'screener.filters.minMarketCapUsd',
+  maxMarketCapUsd: 'screener.filters.maxMarketCapUsd',
+  minHolders: 'screener.filters.minHolders',
+  minTraders24h: 'screener.filters.minTraders24h',
+  minBuySellRatio: 'screener.filters.minBuySellRatio',
+  minVolLiqRatio: 'screener.filters.minVolLiqRatio',
+  stopLossPct: 'trading.stopLossPct',
+  trailingActivateGainPct: 'trailing.activateGainPct',
+  trailingTrailPct: 'trailing.trailPct',
+};
+
+function readGeneBaseline(cfg, name) {
+  return GENE_CONFIG_PATH[name].split('.').reduce((o, k) => o?.[k], cfg);
+}
 
 function mutateGene(name, value, mutationRate) {
   const spec = GENE_SPACE[name];
@@ -58,14 +83,13 @@ export class Darwin {
 
   _seed() {
     const cfg = getConfig();
-    const base = cfg.screener.filters;
     const n = cfg.darwin.populationSize;
     db.genomes = [];
     // Genome 0 = baseline persis config; sisanya mutasi acak dari baseline
     for (let i = 0; i < n; i++) {
       const genes = {};
       for (const name of Object.keys(GENE_SPACE)) {
-        const baseVal = base[name] ?? (GENE_SPACE[name].min + GENE_SPACE[name].max) / 2;
+        const baseVal = readGeneBaseline(cfg, name) ?? (GENE_SPACE[name].min + GENE_SPACE[name].max) / 2;
         genes[name] = i === 0 ? baseVal : mutateGene(name, baseVal, 1.0);
       }
       db.genomes.push(this._newGenome(genes));

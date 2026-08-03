@@ -73,6 +73,9 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
     txid: res.txid,
     genomeId: c.genomeId || null,
     llmVerdict: c.llmVerdict || null,
+    slPct: c.exitGenes?.slPct ?? null,
+    trailingActivateGainPct: c.exitGenes?.trailingActivateGainPct ?? null,
+    trailingTrailPct: c.exitGenes?.trailingTrailPct ?? null,
   });
   breaker.recordOpen(chainKey);
   log.info(`position opened [${source}]: ${c.symbol} @ ${c.priceUsd}`);
