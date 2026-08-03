@@ -159,11 +159,11 @@ export class PositionManager {
           if (Number.isFinite(h1)) p._volPct = Math.abs(h1);
           const dexPriceUsable = price > 0 && !(liqUsd > 0 && liqUsd < minLiq);
           if (!dexPriceUsable) {
-            const chain = this.executor.chain(p.chain);
-            if (typeof chain.quoteSellPriceUsd === 'function') {
-              const nativePx = await chain.quoteSellPriceUsd(p.address).catch(() => null);
-              if (nativePx > 0) {
-                try {
+            try {
+              const chain = this.executor.chain(p.chain);
+              if (typeof chain.quoteSellPriceUsd === 'function') {
+                const nativePx = await chain.quoteSellPriceUsd(p.address).catch(() => null);
+                if (nativePx > 0) {
                   const solUsd = await nativePriceUsd(p.chain);
                   const fallbackPrice = nativePx * solUsd;
                   if (fallbackPrice > 0) {
@@ -175,8 +175,13 @@ export class PositionManager {
                     }
                     continue;
                   }
-                } catch { /* nativePriceUsd best-effort, fall through to warn below */ }
+                }
               }
+            } catch (e) {
+              // executor.chain() bisa throw kalau chain di-disable saat runtime (hot-reload config),
+              // atau nativePriceUsd/lain gagal — best-effort, jangan biarkan lempar keluar loop
+              // (posisi/moonbag lain di chain yg sama masih harus lanjut refresh normal).
+              log.debug(`${p.symbol}: quote fallback failed: ${e.message}`);
             }
             p._tickDropPct = 0;
             // Peringatkan jika harga stale >stalePriceWarnSec (token mungkin delisted/rug)
