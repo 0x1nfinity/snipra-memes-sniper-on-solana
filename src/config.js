@@ -134,6 +134,11 @@ export const DEFAULTS = {
     maxHoldMinutes: 0, // 0 = nonaktif; total waktu hold maksimum sebelum force-close
     sidewaysTimeoutMinutes: 0, // 0 = nonaktif; force-close kalau PnL mandek terlalu lama
     sidewaysPnlBandPct: 2, // |PnL| di bawah ini dianggap "mandek" utk sideways timeout
+    // Re-cek hard filter tepat sebelum eksekusi buy (proteksi kandidat basi/rug
+    // di antara screening dan eksekusi). Berlaku utk auto-buy DAN /buy manual.
+    buyFreshnessCheck: true,
+    buyMaxRetries: 2,
+    buyRetryDelayMs: 2000,
     // Abaikan pembacaan harga dari pair dengan likuiditas < nilai ini (USD).
     // Pair likuiditas ~0 sering memberi harga sampah (sumber utama glitch).
     priceMinLiquidityUsd: 300,

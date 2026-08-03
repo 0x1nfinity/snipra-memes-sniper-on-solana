@@ -2,11 +2,14 @@ import { getConfig } from '../config.js';
 import { findOpen, inCooldown, openPositions, addPosition, closePosition,
          recordPartialSell, findMoonbag, removeMoonbag } from '../positions/state.js';
 import { tokenPairs, bestPair, normalizePair } from '../screener/dexscreener.js';
+import { evaluate } from '../screener/filters.js';
 import { shortAddr } from '../utils.js';
 import { createLogger } from '../logger.js';
 import { breaker } from './circuit-breaker.js';
 
 const log = createLogger('trade');
+
+const TRANSIENT_BUY_ERROR_RE = /timeout|ECONN|EAI_|ENOTFOUND|ETIMEDOUT|nonce|underpriced|replacement|rate.?limit|429|503/i;
 
 export function effectiveMax(cfg) {
   const c = cfg || getConfig();
@@ -36,10 +39,28 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
   if (openPositions().length >= effMax)
     throw new Error(`max positions (${effMax}) reached`);
 
+  if (cfg.trading.buyFreshnessCheck) {
+    const res = evaluate(c, cfg.screener.filters);
+    if (!res.pass) throw new Error(`freshness recheck failed: ${res.reasons.join(', ')}`);
+  }
+
   breaker.check(chainKey);
 
   const amount = amountNative;
-  const res = await executor.buy(chainKey, c.address, amount, { labels: c.labels });
+  const maxRetries = cfg.trading.buyMaxRetries ?? 0;
+  const retryDelayMs = cfg.trading.buyRetryDelayMs ?? 2000;
+  let res;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      res = await executor.buy(chainKey, c.address, amount, { labels: c.labels });
+      break;
+    } catch (e) {
+      const isTransient = TRANSIENT_BUY_ERROR_RE.test(e.message);
+      if (!isTransient || attempt >= maxRetries) throw e;
+      log.debug(`buy retry #${attempt + 1} for ${c.symbol} in ${retryDelayMs}ms: ${e.message}`);
+      await new Promise((r) => setTimeout(r, retryDelayMs));
+    }
+  }
   const pos = addPosition({
     chain: chainKey,
     address: c.address,

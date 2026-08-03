@@ -69,30 +69,14 @@ export function createScreeningCycle(deps) {
       });
       const bought = [];
       const rejected = [];
-      const MAX_RETRIES = 2;
-      const RETRY_DELAY_MS = 2000;
       for (const c of candidates) {
         c.genomeId = genomeId;
-        let lastError = null;
-        let boughtToken = false;
-        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-          try {
-            const pos = await buyToken(c.chain, c.address, undefined, 'screener', c);
-            bought.push({ c, pos });
-            boughtToken = true;
-            if (attempt > 0) log.info(`retry #${attempt} succeeded for ${c.symbol}`);
-            break;
-          } catch (e) {
-            lastError = e.message;
-            const isTransient = /timeout|ECONN|EAI_|ENOTFOUND|ETIMEDOUT|nonce|underpriced|replacement|rate.?limit|429|503/i.test(e.message);
-            if (!isTransient || attempt >= MAX_RETRIES) break;
-            log.debug(`retry #${attempt + 1} for ${c.symbol} in ${RETRY_DELAY_MS}ms: ${e.message}`);
-            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-          }
-        }
-        if (!boughtToken) {
-          rejected.push({ c, reason: lastError || 'failed' });
-          log.debug(`skip buy ${c.symbol}: ${lastError}`);
+        try {
+          const pos = await buyToken(c.chain, c.address, undefined, 'screener', c);
+          bought.push({ c, pos });
+        } catch (e) {
+          rejected.push({ c, reason: e.message });
+          log.debug(`skip buy ${c.symbol}: ${e.message}`);
         }
       }
       if (cfg.telegram.notifyScreening) {
