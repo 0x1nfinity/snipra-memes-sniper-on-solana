@@ -66,6 +66,36 @@ export class SolanaChain {
     return { raw, decimals, ui: Number(raw) / 10 ** decimals };
   }
 
+  /**
+   * Harga jual token (dalam SOL per token) dari quote Jupiter LANGSUNG terhadap
+   * saldo wallet saat ini — dipakai sebagai fallback saat harga DexScreener
+   * tidak tersedia / dari pair likuiditas terlalu tipis (lihat PositionManager
+   * ._refreshPrices). Hanya berlaku live (perlu wallet + saldo on-chain nyata);
+   * TIDAK ada di PaperChain — caller di manager.js feature-detect via typeof.
+   * null kalau saldo 0 atau quote gagal (best-effort, tidak boleh throw ke tick loop).
+   */
+  async quoteSellPriceUsd(tokenAddress) {
+    if (!this.wallet) return null;
+    try {
+      const bal = await this.tokenBalance(tokenAddress);
+      if (!(bal.raw > 0n) || !(bal.ui > 0)) return null;
+      const base = this._jupBase();
+      const q = new URLSearchParams({
+        inputMint: tokenAddress,
+        outputMint: SOL_MINT,
+        amount: bal.raw.toString(),
+        slippageBps: '50',
+      });
+      const quote = await fetchJson(`${base}/quote?${q}`, { headers: this._jupHeaders() });
+      if (!quote?.outAmount) return null;
+      const solOut = Number(quote.outAmount) / LAMPORTS_PER_SOL;
+      return solOut / bal.ui;
+    } catch (e) {
+      log.debug(`quoteSellPriceUsd ${tokenAddress.slice(0, 6)} failed: ${e.message}`);
+      return null;
+    }
+  }
+
   _jupHeaders() {
     return process.env.JUPITER_API_KEY
       ? { 'x-api-key': process.env.JUPITER_API_KEY, 'Content-Type': 'application/json' }

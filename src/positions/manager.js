@@ -1,5 +1,6 @@
 import { getConfig } from '../config.js';
 import { tokensBatch } from '../screener/dexscreener.js';
+import { nativePriceUsd } from '../prices.js';
 import {
   openPositions, updatePrice, currentPnlPct, recordPartialSell, closePosition,
   moonbags, moveToMoonbag, updateMoonbagPrice,
@@ -156,18 +157,32 @@ export class PositionManager {
         for (const p of list) {
           const { price, liqUsd, h1 } = priceOf(p);
           if (Number.isFinite(h1)) p._volPct = Math.abs(h1);
-          if (!(price > 0)) {
+          const dexPriceUsable = price > 0 && !(liqUsd > 0 && liqUsd < minLiq);
+          if (!dexPriceUsable) {
+            const chain = this.executor.chain(p.chain);
+            if (typeof chain.quoteSellPriceUsd === 'function') {
+              const nativePx = await chain.quoteSellPriceUsd(p.address).catch(() => null);
+              if (nativePx > 0) {
+                try {
+                  const solUsd = await nativePriceUsd(p.chain);
+                  const fallbackPrice = nativePx * solUsd;
+                  if (fallbackPrice > 0) {
+                    const prev = p.currentPrice;
+                    if (updatePrice(p, fallbackPrice) && prev > 0) {
+                      p._tickDropPct = Math.max(0, ((prev - fallbackPrice) / prev) * 100);
+                    } else {
+                      p._tickDropPct = 0;
+                    }
+                    continue;
+                  }
+                } catch { /* nativePriceUsd best-effort, fall through to warn below */ }
+              }
+            }
             p._tickDropPct = 0;
             // Peringatkan jika harga stale >stalePriceWarnSec (token mungkin delisted/rug)
             if (now - p.lastPriceAt > staleMs && p.lastPriceAt > 0) {
               log.warn(`${p.symbol}: price unavailable for ${Math.round((now - p.lastPriceAt) / 1000)}s — token may be delisted`);
             }
-            continue;
-          }
-          // Sanity: pembacaan dari pair likuiditas ~0 tidak dipercaya (glitch harga)
-          if (liqUsd > 0 && liqUsd < minLiq) {
-            log.warn(`${p.symbol}: price $${price} ignored (liquidity $${liqUsd.toFixed(0)} < $${minLiq})`);
-            p._tickDropPct = 0;
             continue;
           }
           const prev = p.currentPrice;
