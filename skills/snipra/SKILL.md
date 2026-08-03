@@ -38,7 +38,7 @@ You are the **brain** of this bot. The runner process handles all execution (Dex
 ```json
 {
   "id": "string",
-  "type": "assess_token | assess_batch | record_lesson | suggest_genes | derive_lessons | chat",
+  "type": "assess_token | assess_batch | record_lesson | suggest_genes | derive_lessons",
   "system": "system prompt describing your role and task",
   "user": "the data or question to evaluate",
   "response_format": { ... description of expected output ... }
@@ -118,31 +118,45 @@ Respond with:
 {"lessons":[{"text":"...","outcome":"WIN|LOSS|PATTERN"},...]}
 ```
 
-#### 6. chat
-Respond to user's natural language message. The system prompt contains the bot persona (snipra, Indonesian-speaking memecoin sniper) and realtime state (open positions, PnL, stats). If the request includes `tools`, you may respond with `tool_calls` to execute actions:
-- `screen_now` — run one screening cycle
-- `buy_token` — buy a token (chain: solana, address, optional amount)
-- `sell_token` — sell a position (address, optional pct 1-100)
-- `close_all_positions` — close all open positions
-- `get_positions` — get current open positions
-
-Max 4 tool-calling hops per chat. After tools execute, the runner sends a follow-up chat request with results.
-
-Respond with:
-```json
-{"reply":"<response text, Indonesian>"}
-```
-Or with tool calls (note: `tool_calls` is at the top level, alongside `id` and `ok`, not nested inside `result`):
-```json
-{"id":"<request id>","ok":true,"tool_calls":[{"id":"call_1","function":{"name":"buy_token","arguments":"{\"chain\":\"solana\",\"address\":\"...\"}"}}]}
-```
-
 ## Shutdown
 
 When the runner exits, it prints `{"type":"shutdown","reason":"..."}`. Stop reading stdout.
 
 ## User Interaction
 
-The user can chat with you directly. You forward their messages as `chat` requests to the runner. The runner responds with the bot's reply, which you relay to the user.
+The user talks to you directly — not through this stdout/stdin protocol. You are their single interface to the bot; they never need Telegram (notifications only in skill mode) or any other channel.
 
-For status checks, the user can ask you "what's my position?" or "how's the bot doing?" — forward as a chat request and the runner will respond with current state.
+### Checking status
+
+Run:
+```bash
+node scripts/skill-status.js
+```
+Prints a snapshot: mode, open positions + PnL, recent trades, Darwin genome status, active filters/TP/SL/trailing config. Read-only, safe to run anytime.
+
+### Taking action
+
+Run:
+```bash
+node scripts/skill-command.js <tool_name> '<json_args>'
+```
+
+Available tools:
+
+| Tool | Args | Description |
+|------|------|--------------|
+| `get_positions` | `{}` | Open positions + PnL + moonbag count |
+| `screen_now` | `{}` | Run one screening cycle now, buy whatever passes |
+| `buy_token` | `{"chain":"solana","address":"...","amount":<optional native SOL>}` | Buy a token |
+| `sell_token` | `{"address":"...","pct":<optional 1-100, default 100>}` | Sell a position/moonbag |
+| `close_all_positions` | `{}` | Close every open position now |
+
+The command blocks up to 30s and prints the result as JSON. Two different things can mean "the action didn't do what you wanted" — check both:
+- Top-level `"ok":false` — the command queue itself failed (an unexpected exception, or "no response from snipra after 30s — is it running?" if the runner process isn't up).
+- Top-level `"ok":true` but `"result":{"error":"..."}` — the tool ran fine but rejected the request for a normal reason (e.g. `buy_token` with an unrecognized chain returns `{"error":"unknown chain"}` inside `result`, not a top-level failure). This is the same "return an error object instead of throwing" convention `LLM_TOOL_DEFS`'s tools have always used, not something specific to this CLI.
+
+Relay the outcome to the user in your own words; do not paste raw JSON at them.
+
+Example: user says "beli token ABC di solana" → run
+`node scripts/skill-command.js buy_token '{"chain":"solana","address":"ABC..."}'`
+→ report back what happened.
