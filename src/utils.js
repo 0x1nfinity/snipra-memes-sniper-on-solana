@@ -103,3 +103,25 @@ export function randBetween(min, max) {
 export function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
+
+/**
+ * Stop-loss dinamis: melebar saat volatilitas tinggi, menyempit saat rendah.
+ * volPercent = proxy volatilitas (di sini: |priceChange.h1| dari DexScreener,
+ * karena tidak ada sumber candle/ATR asli — lihat src/positions/manager.js).
+ * Diadaptasi dari legacy/src/utils.js:199-208 (nama parameter atrPercent→volPercent
+ * karena bukan ATR asli).
+ */
+export function dynamicStopLossPercent({
+  baseSlPercent, volPercent, multiplier = 1.5,
+  floorPercent = -55, ceilingPercent = -10,
+  minVolPercent = 3, maxVolPercent = 40,
+}) {
+  const base = Number(baseSlPercent);
+  if (!Number.isFinite(base)) return -25;
+  if (!Number.isFinite(Number(volPercent)) || Number(volPercent) <= 0) {
+    return Math.max(floorPercent, Math.min(ceilingPercent, base));
+  }
+  const boundedVol = Math.max(minVolPercent, Math.min(maxVolPercent, Number(volPercent)));
+  const dynamic = -boundedVol * multiplier;
+  return Math.max(floorPercent, Math.min(ceilingPercent, dynamic));
+}

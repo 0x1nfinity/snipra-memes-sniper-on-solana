@@ -4,7 +4,7 @@ import {
   openPositions, updatePrice, currentPnlPct, recordPartialSell, closePosition,
   moonbags, moveToMoonbag, updateMoonbagPrice,
 } from './state.js';
-import { fmtPct, fmtUsd, tokenLink } from '../utils.js';
+import { fmtPct, fmtUsd, tokenLink, dynamicStopLossPercent } from '../utils.js';
 import { createLogger } from '../logger.js';
 
 const log = createLogger('positions');
@@ -130,13 +130,18 @@ export class PositionManager {
             .filter((x) => x?.baseToken?.address?.toLowerCase() === p.address.toLowerCase())
             .sort((a, b) => (b?.liquidity?.usd || 0) - (a?.liquidity?.usd || 0));
           const pair = mine.find((x) => x.pairAddress === p.pairAddress) || mine[0];
-          return { price: Number(pair?.priceUsd), liqUsd: Number(pair?.liquidity?.usd) || 0 };
+          return {
+            price: Number(pair?.priceUsd),
+            liqUsd: Number(pair?.liquidity?.usd) || 0,
+            h1: Number(pair?.priceChange?.h1),
+          };
         };
         const minLiq = cfg.trading.priceMinLiquidityUsd ?? 0;
         const now = Date.now();
         const staleMs = (cfg.monitor.stalePriceWarnSec ?? 600) * 1000;
         for (const p of list) {
-          const { price, liqUsd } = priceOf(p);
+          const { price, liqUsd, h1 } = priceOf(p);
+          if (Number.isFinite(h1)) p._volPct = Math.abs(h1);
           if (!(price > 0)) {
             p._tickDropPct = 0;
             // Peringatkan jika harga stale >stalePriceWarnSec (token mungkin delisted/rug)
@@ -180,8 +185,20 @@ export class PositionManager {
     for (const pos of [...openPositions()]) {
       const pnl = currentPnlPct(pos);
       try {
-        // ===== 1. STOP LOSS (dengan konfirmasi anti-glitch/flash-dump) =====
-        if (pnl <= cfg.trading.stopLossPct) {
+        // ===== 1. STOP LOSS (dinamis + konfirmasi anti-glitch/flash-dump) =====
+        const dsl = cfg.trading.dynamicSl;
+        const effectiveSlPct = dsl?.enabled
+          ? dynamicStopLossPercent({
+              baseSlPercent: cfg.trading.stopLossPct,
+              volPercent: pos._volPct,
+              multiplier: dsl.multiplier,
+              floorPercent: dsl.floorPct,
+              ceilingPercent: dsl.ceilingPct,
+              minVolPercent: dsl.minVolPct,
+              maxVolPercent: dsl.maxVolPct,
+            })
+          : cfg.trading.stopLossPct;
+        if (pnl <= effectiveSlPct) {
           const flashDrop = cfg.trading.slFlashDropPct ?? 0;
           const sudden = flashDrop > 0 && (pos._tickDropPct ?? 0) >= flashDrop;
           // Penurunan mendadak menembus SL dalam satu tick → tunda, konfirmasi tick berikut.
@@ -194,7 +211,7 @@ export class PositionManager {
             continue;
           }
           pos._slPending = null;
-          await this._closeAll(pos, 'SL');
+          await this._closeAll(pos, effectiveSlPct !== cfg.trading.stopLossPct ? `SL (dynamic ${effectiveSlPct.toFixed(1)}%)` : 'SL');
           continue;
         }
         // Harga pulih di atas SL padahal tadi sempat pending → glitch/flash terkonfirmasi

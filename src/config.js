@@ -120,6 +120,17 @@ export const DEFAULTS = {
     // Bila tick berikut harga pulih di atas SL → dianggap glitch/flash, dibatalkan.
     // Dump bertahap (turun pelan menembus SL) tetap di-close langsung seperti biasa.
     slFlashDropPct: 40,
+    // Stop-loss dinamis berbasis proxy volatilitas (|priceChange.h1| dari DexScreener).
+    // effective SL = clamp(-|h1| * multiplier, floorPct, ceilingPct); base stopLossPct
+    // dipakai sebagai fallback saat data volatilitas belum ada / dynamicSl.enabled=false.
+    dynamicSl: {
+      enabled: true,
+      multiplier: 1.5,
+      floorPct: -55,
+      ceilingPct: -10,
+      minVolPct: 3,
+      maxVolPct: 40,
+    },
     // Abaikan pembacaan harga dari pair dengan likuiditas < nilai ini (USD).
     // Pair likuiditas ~0 sering memberi harga sampah (sumber utama glitch).
     priceMinLiquidityUsd: 300,
