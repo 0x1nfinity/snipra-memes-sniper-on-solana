@@ -10,6 +10,20 @@ import { createLogger } from '../logger.js';
 const log = createLogger('positions');
 
 /**
+ * Exit karena waktu, independen dari PnL: MAX_HOLD (batas hold total) dan
+ * SIDEWAYS_TIMEOUT (PnL mandek terlalu lama, bebaskan slot). MAX_HOLD menang
+ * kalau keduanya sama-sama terpicu. 0 = timer nonaktif.
+ * Pure function (tanpa akses posisi/DB) supaya gampang di-unit-test.
+ */
+export function shouldTimeExit({ ageMinutes, pnlPct, maxHoldMinutes, sidewaysTimeoutMinutes, sidewaysPnlBandPct }) {
+  if (maxHoldMinutes > 0 && ageMinutes >= maxHoldMinutes) return 'MAX_HOLD';
+  if (sidewaysTimeoutMinutes > 0 && ageMinutes >= sidewaysTimeoutMinutes && Math.abs(pnlPct) < sidewaysPnlBandPct) {
+    return 'SIDEWAYS_TIMEOUT';
+  }
+  return null;
+}
+
+/**
  * Loop pemantau posisi: update harga → TP ladder → trailing profit → stop loss.
  * deps: { executor, notify(msg), onTradeClosed(trade) }
  */
@@ -185,6 +199,19 @@ export class PositionManager {
     for (const pos of [...openPositions()]) {
       const pnl = currentPnlPct(pos);
       try {
+        // ===== 0. TIME-BASED EXIT (independen dari PnL/SL/TP) =====
+        const timeReason = shouldTimeExit({
+          ageMinutes: (Date.now() - pos.openedAt) / 60000,
+          pnlPct: pnl,
+          maxHoldMinutes: cfg.trading.maxHoldMinutes ?? 0,
+          sidewaysTimeoutMinutes: cfg.trading.sidewaysTimeoutMinutes ?? 0,
+          sidewaysPnlBandPct: cfg.trading.sidewaysPnlBandPct ?? 2,
+        });
+        if (timeReason) {
+          await this._closeAll(pos, timeReason === 'MAX_HOLD' ? 'Max hold time reached' : `Sideways timeout (PnL ${fmtPct(pnl)})`);
+          continue;
+        }
+
         // ===== 1. STOP LOSS (dinamis + konfirmasi anti-glitch/flash-dump) =====
         const dsl = cfg.trading.dynamicSl;
         const effectiveSlPct = dsl?.enabled
