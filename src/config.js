@@ -177,6 +177,8 @@ export const DEFAULTS = {
     // ulang tiap siklus screening kalau kondisi pasar belum banyak berubah.
     decisionCacheEnabled: true,
     decisionCacheSkipTtlMin: 30,
+    batchSize: 5, // jumlah kandidat digabung dalam satu panggilan LLM
+    cheapModel: '', // model lebih murah utk batch gate; kosong = pakai `model` yang sama
     tools: true, // izinkan LLM memanggil tool (screen/buy/sell/positions) di chat
   },
   telegram: {

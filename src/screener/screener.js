@@ -190,34 +190,40 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
   // LLM gate buy/skip (opsional) — token sudah lolos hard filter, default BUY.
   // Tolak HANYA jika action=skip atau confidence di bawah minConfidence.
   // Ukuran posisi TIDAK dipengaruhi LLM — selalu config.json buyAmount.
+  // Kandidat digabung dalam batch (cfg.llm.batchSize) supaya hemat panggilan LLM.
   if (cfg.llm.enabled && cfg.llm.gateBuy && llm && passed.length > 0) {
     const gated = [];
-    for (const c of passed) {
+    const batchSize = Math.max(1, cfg.llm.batchSize || 1);
+    for (let i = 0; i < passed.length; i += batchSize) {
+      const batch = passed.slice(i, i + batchSize);
       try {
-        const v = await llm.assessToken(c);
-        c.llmVerdict = v;
-        if (v.action === 'buy' && v.confidence >= cfg.llm.minConfidence) {
-          gated.push(c);
-        } else {
-          log.info(`${c.symbol} rejected by LLM (${v.action}, conf ${v.confidence}): ${v.reason}`);
-          if (cfg.llm.decisionCacheEnabled) {
-            storeDecisionCache(c.chain, c.address, 'skip', {
-              confidence: v.confidence,
-              reason: v.reason,
-              mcap: c.marketCap,
-              holders: c.holders,
-              ttlMs: cfg.llm.decisionCacheSkipTtlMin * 60000,
-            });
+        const verdicts = await llm.assessBatch(batch);
+        batch.forEach((c, idx) => {
+          const v = verdicts[idx];
+          c.llmVerdict = v;
+          if (v.action === 'buy' && v.confidence >= cfg.llm.minConfidence) {
+            gated.push(c);
+          } else {
+            log.info(`${c.symbol} rejected by LLM (${v.action}, conf ${v.confidence}): ${v.reason}`);
+            if (cfg.llm.decisionCacheEnabled) {
+              storeDecisionCache(c.chain, c.address, 'skip', {
+                confidence: v.confidence,
+                reason: v.reason,
+                mcap: c.marketCap,
+                holders: c.holders,
+                ttlMs: cfg.llm.decisionCacheSkipTtlMin * 60000,
+              });
+            }
           }
-        }
+        });
       } catch (e) {
-        // failOpen=true (default): LLM error → token lolos (backward compat)
-        // failOpen=false: LLM error → token ditolak (lebih aman)
+        // failOpen=true (default): LLM error → seluruh batch lolos (backward compat)
+        // failOpen=false: LLM error → seluruh batch ditolak (lebih aman)
         if (cfg.llm.failOpen !== false) {
-          log.warn(`LLM failed for ${c.symbol}, passing without gate:`, e.message);
-          gated.push(c);
+          log.warn(`LLM batch failed (${batch.length} candidates), passing without gate:`, e.message);
+          gated.push(...batch);
         } else {
-          log.warn(`LLM failed for ${c.symbol}, rejected (failOpen=false):`, e.message);
+          log.warn(`LLM batch failed (${batch.length} candidates), rejected (failOpen=false):`, e.message);
         }
       }
     }
