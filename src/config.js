@@ -99,6 +99,9 @@ export const DEFAULTS = {
       maxGainH24Pct: 400,
       runThresholdPct: 200, // ambang "run besar" yang mengaktifkan syarat pullback
     },
+    // Pre-scorer: gate rule-based GRATIS sebelum LLM (lihat src/screener/preScorer.js).
+    // false = semua kandidat lolos hard filter langsung diteruskan ke LLM gate.
+    preScoreEnabled: true,
   },
   trading: {
     buyAmount: 0.3, // ukuran posisi PERSIS dalam SOL (satu-satunya kontrol ukuran)
@@ -170,6 +173,10 @@ export const DEFAULTS = {
     minConfidence: 0.35, // action=buy tapi confidence di bawah ini → tetap ditolak
     failOpen: true, // true = LLM error → token lolos; false = LLM error → token ditolak
     maxLessons: 12, // jumlah lesson terakhir yang diinject ke prompt
+    // Decision cache: skip verdict LLM di-cache per token supaya tidak tanya
+    // ulang tiap siklus screening kalau kondisi pasar belum banyak berubah.
+    decisionCacheEnabled: true,
+    decisionCacheSkipTtlMin: 30,
     tools: true, // izinkan LLM memanggil tool (screen/buy/sell/positions) di chat
   },
   telegram: {

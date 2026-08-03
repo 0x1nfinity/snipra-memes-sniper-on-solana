@@ -2,7 +2,8 @@ import { getConfig } from '../config.js';
 import { discover } from './dexscreener.js';
 import { tokenSecurity } from './goplus.js';
 import { evaluate, score } from './filters.js';
-import { athObserve } from '../db.js';
+import { preScore, PRE_SCORE_THRESHOLD } from './preScorer.js';
+import { athObserve, checkDecisionCache, storeDecisionCache, pruneExpiredDecisionCache } from '../db.js';
 import { mapLimit } from '../utils.js';
 import { createLogger } from '../logger.js';
 
@@ -156,6 +157,30 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
     else log.debug(`${c.symbol} rejected: ${res.reasons.join(', ')}`);
   }
 
+  // Decision cache: skip token yang baru saja di-skip LLM & kondisi pasarnya belum bergeser
+  // (hemat panggilan LLM — dicek SEBELUM pre-scorer karena tanpa biaya sama sekali).
+  if (cfg.llm.decisionCacheEnabled) {
+    pruneExpiredDecisionCache();
+    passed = passed.filter((c) => {
+      const cached = checkDecisionCache(c.chain, c.address, { mcap: c.marketCap, holders: c.holders });
+      if (cached) {
+        log.debug(`${c.symbol} skipped (decision cache: ${cached.reason || cached.verdict})`);
+        return false;
+      }
+      return true;
+    });
+  }
+
+  // Pre-scorer: gate rule-based gratis, tanpa API call tambahan.
+  if (cfg.screener.preScoreEnabled) {
+    passed = passed.filter((c) => {
+      const r = preScore(c);
+      c.preScore = r.score;
+      if (!r.passed) log.debug(`${c.symbol} rejected by pre-scorer: score ${r.score} < ${PRE_SCORE_THRESHOLD} (${r.reasons.join(', ')})`);
+      return r.passed;
+    });
+  }
+
   // Ranking dan potong sesuai slot
   passed.sort((a, b) => score(b) - score(a));
   passed = passed.slice(0, cfg.screener.maxCandidatesPerCycle);
@@ -173,6 +198,15 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
           gated.push(c);
         } else {
           log.info(`${c.symbol} rejected by LLM (${v.action}, conf ${v.confidence}): ${v.reason}`);
+          if (cfg.llm.decisionCacheEnabled) {
+            storeDecisionCache(c.chain, c.address, 'skip', {
+              confidence: v.confidence,
+              reason: v.reason,
+              mcap: c.marketCap,
+              holders: c.holders,
+              ttlMs: cfg.llm.decisionCacheSkipTtlMin * 60000,
+            });
+          }
         }
       } catch (e) {
         // failOpen=true (default): LLM error → token lolos (backward compat)
