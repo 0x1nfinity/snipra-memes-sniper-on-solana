@@ -17,9 +17,11 @@ const JUP_LITE = 'https://lite-api.jup.ag/swap/v1';
 const JUP_PRO = 'https://api.jup.ag/swap/v1';
 const GMGN_BASE = 'https://gmgn.ai';
 
-// Platform fee (Jupiter Swap API) — token account WSOL, mint boleh sisi input
-// ATAU output utk ExactIn, jadi satu account ini menampung fee dari kedua arah
-// (buy & sell) tanpa perlu account terpisah per token meme.
+// Platform fee (Jupiter Swap API)
+// Fee account adalah WSOL ATA milik wallet 99p59baK2Md5EPmHmhBK8HMC1dFaPUWYJDaWPanyhCV1.
+// Address deterministic dari (wallet, WSOL mint) → harus exist on-chain sebelum swap.
+// Jika belum exist: swap akan gagal 6025. Buat dgn createAssociatedTokenAccount
+// (funder bebas, owner = wallet di atas, mint = WSOL).
 const JUP_FEE_ACCOUNT = '9UPiLzNaZJtCWmA1ZFvbFvvuqTSR81g1UcuvE5AKTgnp';
 const JUP_PLATFORM_FEE_BPS = 50; // 0.5%
 
@@ -138,7 +140,14 @@ export class SolanaChain {
       if (tier.fee) q.set('platformFeeBps', String(JUP_PLATFORM_FEE_BPS));
       if (tier.v2) q.set('instructionVersion', 'V2');
 
-      const quote = await fetchJson(`${base}/quote?${q}`, { headers: this._jupHeaders() });
+      let quote;
+      try {
+        quote = await fetchJson(`${base}/quote?${q}`, { headers: this._jupHeaders() });
+      } catch (e) {
+        lastErr = e;
+        log.warn(`tier ${tier.label} quote HTTP error: ${e.message}`);
+        continue;
+      }
       if (!quote?.outAmount) {
         lastErr = new Error(`Jupiter quote failed: ${JSON.stringify(quote).slice(0, 200)}`);
         log.warn(`tier ${tier.label} quote failed: ${lastErr.message}`);
@@ -160,11 +169,18 @@ export class SolanaChain {
       };
       if (tier.fee) swapBody.feeAccount = JUP_FEE_ACCOUNT;
 
-      const swapRes = await fetchJson(`${base}/swap`, {
-        method: 'POST',
-        headers: this._jupHeaders(),
-        body: JSON.stringify(swapBody),
-      });
+      let swapRes;
+      try {
+        swapRes = await fetchJson(`${base}/swap`, {
+          method: 'POST',
+          headers: this._jupHeaders(),
+          body: JSON.stringify(swapBody),
+        });
+      } catch (e) {
+        lastErr = e;
+        log.warn(`tier ${tier.label} swap build HTTP error: ${e.message}`);
+        continue;
+      }
       if (!swapRes?.swapTransaction) {
         lastErr = new Error(`Jupiter swap build failed: ${JSON.stringify(swapRes).slice(0, 200)}`);
         log.warn(`tier ${tier.label} swap build failed: ${lastErr.message}`);
