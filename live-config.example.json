@@ -22,13 +22,8 @@
   "screener": {
     // Max new candidates evaluated per screening cycle.
     "maxCandidatesPerCycle": 3,
-    // Primary discovery source: 'gmgn' | 'dexscreener'
-    "source": "gmgn",
     // GMGN trench section: 'new_creation' | 'near_completion' | 'completed'
     "section": "new_creation",
-    // GMGN API keys for discovery (comma-separated in .env, loaded as array here).
-    // First key is primary; subsequent keys used as fallback on failure.
-    "gmgnApiKeys": [],
     "filters": {
       // Whitelist launchpads (e.g. ["Pump.fun"]). [] or null = all launchpads.
       "launchpads": ["Pump.fun"],
@@ -114,9 +109,7 @@
     "priceMinLiquidityUsd": 300,
     // Ignore a price update if it spikes more than this % in one tick.
     // 0 = disabled. Default 500% (6x).
-    "priceAnomalySpikePct": 500,
-    // Simulated gas per swap in paper mode (native SOL, per chain).
-    "paperGas": { "solana": 0.000005 }
+    "priceAnomalySpikePct": 500
   },
   "tpLadder": [
     // gainPct = profit target %, sellPct = % of remaining position sold
@@ -174,8 +167,6 @@
     "decisionCacheSkipTtlMin": 30,
     // Candidates batched into one LLM call instead of one call per candidate.
     "batchSize": 5,
-    // Optional cheaper model for the batch gate call; empty = use "model" above.
-    "cheapModel": "",
     // Allow the LLM to call tools (screen/buy/sell/positions) in chat.
     "tools": true
   },
