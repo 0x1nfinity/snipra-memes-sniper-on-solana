@@ -16,11 +16,6 @@ const SOL_MINT = 'So11111111111111111111111111111111111111112';
 const JUP_LITE = 'https://lite-api.jup.ag/swap/v1';
 const JUP_PRO = 'https://api.jup.ag/swap/v1';
 const GMGN_BASE = 'https://gmgn.ai';
-// Jupiter excludeDexes expects LABELS, not program IDs.
-// Program IDs are silently ignored, so we must use Jupiter's internal DEX label.
-// 'Pump.fun Amm' is the label Jupiter uses for Pump.fun's AMM pools.
-// We exclude it to avoid error 6025 on completed/graduated tokens.
-const PUMP_AMM_LABEL = 'Pump.fun Amm';
 
 // Platform fee (Jupiter Swap API) — token account WSOL, mint boleh sisi input
 // ATAU output utk ExactIn, jadi satu account ini menampung fee dari kedua arah
@@ -111,89 +106,119 @@ export class SolanaChain {
     return process.env.JUPITER_API_KEY ? JUP_PRO : JUP_LITE;
   }
 
+  /**
+   * Jupiter swap dengan 3-tier fallback:
+   *   1. V2 + platform fee  (primary — handles Token-2022 dgn fee, seperti old-snipra)
+   *   2. no V2 + fee        (fallback 6014 — Token-2022 mungkin reject tanpa V2)
+   *   3. no V2 + no fee     (last resort — pre-upgrade behaviour, selalu works)
+   *
+   * excludeDexes TIDAK dipakai — old-snipra tidak pakai dan swap-nya lancar.
+   * excludeDexes 'Pump.fun Amm' memaksa Jupiter route lewat DEX lain (Meteora, etc.)
+   * yg justru gagal dgn V2 + Token-2022 = error 0x1789 / 6025.
+   */
   async _jupiterSwap(inputMint, outputMint, rawAmount, slippageBps) {
     const base = this._jupBase();
-    const q = new URLSearchParams({
-      inputMint,
-      outputMint,
-      amount: rawAmount.toString(),
-      slippageBps: String(slippageBps),
-      restrictIntermediateTokens: 'true',
-      excludeDexes: PUMP_AMM_LABEL,
-      platformFeeBps: String(JUP_PLATFORM_FEE_BPS),
-      instructionVersion: 'V2', // wajib utk kutip fee di token Token-2022 (custom 6014 kalau tak ada)
-    });
-    const quote = await fetchJson(`${base}/quote?${q}`, { headers: this._jupHeaders() });
-    if (!quote?.outAmount) throw new Error(`Jupiter quote failed: ${JSON.stringify(quote).slice(0, 200)}`);
 
-    if (this.dryRun) {
-      log.info(`[DRY] jupiter swap ${inputMint.slice(0, 4)}→${outputMint.slice(0, 4)} out=${quote.outAmount}`);
-      return { txid: `dry-${Date.now()}`, outAmountRaw: BigInt(quote.outAmount), quote };
-    }
-    if (!this.wallet) throw new Error('Solana wallet not set');
+    // 3-tier: V2+fee → noV2+fee → noV2+noFee
+    const tiers = [
+      { v2: true,  fee: true,  label: 'V2+fee' },
+      { v2: false, fee: true,  label: 'noV2+fee' },
+      { v2: false, fee: false, label: 'noV2+noFee' },
+    ];
 
-    const swapRes = await fetchJson(`${base}/swap`, {
-      method: 'POST',
-      headers: this._jupHeaders(),
-      body: JSON.stringify({
+    let lastErr;
+    for (const tier of tiers) {
+      const q = new URLSearchParams({
+        inputMint,
+        outputMint,
+        amount: rawAmount.toString(),
+        slippageBps: String(slippageBps),
+        restrictIntermediateTokens: 'true',
+      });
+      if (tier.fee) q.set('platformFeeBps', String(JUP_PLATFORM_FEE_BPS));
+      if (tier.v2) q.set('instructionVersion', 'V2');
+
+      const quote = await fetchJson(`${base}/quote?${q}`, { headers: this._jupHeaders() });
+      if (!quote?.outAmount) {
+        lastErr = new Error(`Jupiter quote failed: ${JSON.stringify(quote).slice(0, 200)}`);
+        log.warn(`tier ${tier.label} quote failed: ${lastErr.message}`);
+        continue;
+      }
+
+      if (this.dryRun) {
+        log.info(`[DRY] jupiter swap ${inputMint.slice(0, 4)}→${outputMint.slice(0, 4)} tier=${tier.label} out=${quote.outAmount}`);
+        return { txid: `dry-${Date.now()}`, outAmountRaw: BigInt(quote.outAmount), quote };
+      }
+      if (!this.wallet) throw new Error('Solana wallet not set');
+
+      const swapBody = {
         quoteResponse: quote,
         userPublicKey: this.wallet.publicKey.toBase58(),
         wrapAndUnwrapSol: true,
         dynamicComputeUnitLimit: true,
         prioritizationFeeLamports: 'auto',
-        feeAccount: JUP_FEE_ACCOUNT,
-      }),
-    });
-    if (!swapRes?.swapTransaction) throw new Error(`Jupiter swap build failed: ${JSON.stringify(swapRes).slice(0, 200)}`);
+      };
+      if (tier.fee) swapBody.feeAccount = JUP_FEE_ACCOUNT;
 
-    const tx = VersionedTransaction.deserialize(Buffer.from(swapRes.swapTransaction, 'base64'));
-    tx.sign([this.wallet]);
-    let txid;
-    try {
-      txid = await this.connection.sendRawTransaction(tx.serialize(), {
-        skipPreflight: true,
-        maxRetries: 3,
+      const swapRes = await fetchJson(`${base}/swap`, {
+        method: 'POST',
+        headers: this._jupHeaders(),
+        body: JSON.stringify(swapBody),
       });
-    } catch (e) {
-      // Transaction too large (1680 bytes > 1644 byte limit) — Jupiter route has too
-      // many intermediate accounts. Retry once without the platform fee account to
-      // shave ~32 bytes off the serialized tx.
-      if (e.message?.includes('too large')) {
-        log.warn('Jupiter tx too large, retrying without fee account');
-        const leanQuote = await fetchJson(`${base}/quote?${q}`, { headers: this._jupHeaders() });
-        if (!leanQuote?.outAmount) throw e;
-        const leanSwap = await fetchJson(`${base}/swap`, {
-          method: 'POST',
-          headers: this._jupHeaders(),
-          body: JSON.stringify({
-            quoteResponse: leanQuote,
-            userPublicKey: this.wallet.publicKey.toBase58(),
-            wrapAndUnwrapSol: true,
-            dynamicComputeUnitLimit: true,
-            prioritizationFeeLamports: 'auto',
-          }),
-        });
-        if (!leanSwap?.swapTransaction) throw e;
-        const tx2 = VersionedTransaction.deserialize(Buffer.from(leanSwap.swapTransaction, 'base64'));
-        tx2.sign([this.wallet]);
-        txid = await this.connection.sendRawTransaction(tx2.serialize(), {
+      if (!swapRes?.swapTransaction) {
+        lastErr = new Error(`Jupiter swap build failed: ${JSON.stringify(swapRes).slice(0, 200)}`);
+        log.warn(`tier ${tier.label} swap build failed: ${lastErr.message}`);
+        continue;
+      }
+
+      const tx = VersionedTransaction.deserialize(Buffer.from(swapRes.swapTransaction, 'base64'));
+      tx.sign([this.wallet]);
+      let txid;
+      try {
+        txid = await this.connection.sendRawTransaction(tx.serialize(), {
           skipPreflight: true,
           maxRetries: 3,
         });
-      } else {
+      } catch (e) {
+        // Transaction too large — try next tier (especially no-fee saves ~32 bytes)
+        if (e.message?.includes('too large') && tier !== tiers[tiers.length - 1]) {
+          log.warn(`tier ${tier.label} tx too large, trying next tier`);
+          continue;
+        }
+        throw e;
+      }
+
+      try {
+        const confirmed = await this._confirm(txid);
+        if (confirmed === 'timeout') {
+          log.warn(`tx ${txid} broadcast but unconfirmed — proceeding, may confirm later`);
+          return { txid, outAmountRaw: BigInt(quote.outAmount), quote, _pendingConfirm: true };
+        }
+        if (!confirmed) {
+          lastErr = new Error(`tx ${txid} not confirmed within timeout`);
+          continue;
+        }
+        if (tier.label !== 'V2+fee') {
+          log.info(`swap succeeded at tier ${tier.label} (tx ${txid.slice(0, 8)})`);
+        }
+        return { txid, outAmountRaw: BigInt(quote.outAmount), quote };
+      } catch (e) {
+        if (e.onChainFailure) {
+          // 6025 = V2 rejected by Token-2022 route, 6014 = IncorrectTokenProgramID tanpa V2
+          const errStr = e.message;
+          const code = errStr.includes('6025') ? '6025' : errStr.includes('6014') ? '6014' : null;
+          if (code && tier !== tiers[tiers.length - 1]) {
+            log.warn(`tier ${tier.label} failed on-chain (${code}), trying next tier`);
+            lastErr = e;
+            continue;
+          }
+        }
         throw e;
       }
     }
-    const confirmed = await this._confirm(txid);
-    if (confirmed === 'timeout') {
-      // tx sudah broadcast via sendRawTransaction (skipPreflight:true, maxRetries:3).
-      // Mungkin confirm nanti — jangan anggap gagal. Caller akan rekam posisi
-      // dengan flag _confirmPending; reconciliation di tick berikutnya akan deteksi.
-      log.warn(`tx ${txid} broadcast but unconfirmed — proceeding, may confirm later`);
-      return { txid, outAmountRaw: BigInt(quote.outAmount), quote, _pendingConfirm: true };
-    }
-    if (!confirmed) throw new Error(`tx ${txid} not confirmed within timeout — treating swap as failed`);
-    return { txid, outAmountRaw: BigInt(quote.outAmount), quote };
+
+    // Semua tier gagal — lempar error terakhir
+    throw lastErr || new Error('All Jupiter swap tiers exhausted');
   }
 
   async _gmgnSwap(inputMint, outputMint, rawAmount, slippageBps) {
