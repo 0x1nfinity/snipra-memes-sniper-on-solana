@@ -94,8 +94,7 @@ export function createScreeningCycle(deps) {
             lines.push('');
           }
           // Rejected tokens TIDAK dinotifikasi satu per satu — hanya ringkasan
-          // di header yg menyebut jumlah rejected. Kalau tidak ada yg dibeli,
-          // jangan kirim notif sama sekali (semua kandidat gagal = bukan sinyal).
+          // di header yg menyebut jumlah rejected.
           if (bought.length > 0) {
             const chainsBought = [...new Set(bought.map((b) => b.c.chain))];
             const saldoLines = await Promise.all(chainsBought.map(async (ck) => {
@@ -109,8 +108,8 @@ export function createScreeningCycle(deps) {
               lines.push(`Balance remaining: ${shown.join(' · ')}`);
               lines.push('');
             }
-            telegram.notify(lines.join('\n').trimEnd());
           }
+          telegram.notify(lines.join('\n').trimEnd());
         }
       }
     } catch (e) {
