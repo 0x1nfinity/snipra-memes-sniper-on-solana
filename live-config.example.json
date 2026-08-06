@@ -53,7 +53,7 @@
       "minTotalFee": null,
       "maxTotalFee": null,
       "maxBotDegenRate": null,
-      "maxTop10HolderRate": 85,
+      "maxTop10HolderRate": null,
       "maxDevHoldRate": null,
       "minSmartDegenCount": null,
       "maxFreshWalletRate": null,

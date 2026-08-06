@@ -118,7 +118,7 @@ function normalizeGmgnToken(raw, section) {
     totalFee: raw.total_fee ?? 0,
     botDegenCount: raw.bot_degen_count ?? 0,
     botDegenRate: raw.bot_degen_rate ?? 0,
-    devHoldRate: raw.dev_team_hold_rate ?? 0,
+    devHoldRate: raw.dev_team_hold_rate != null ? raw.dev_team_hold_rate * 100 : 0,
     top10HolderRate: raw.top_10_holder_rate != null ? raw.top_10_holder_rate * 100 : 0,
     smartDegenCount: raw.smart_degen_count ?? 0,
     sniperCount: raw.sniper_count ?? 0,

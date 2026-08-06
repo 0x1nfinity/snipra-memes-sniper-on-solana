@@ -71,7 +71,7 @@ export function evaluate(c, f) {
   if (f.maxTop10HolderRate != null && c.top10HolderRate != null && c.top10HolderRate > f.maxTop10HolderRate)
     fail(`top10 ${c.top10HolderRate.toFixed(0)}% > ${f.maxTop10HolderRate}%`);
   if (f.maxDevHoldRate != null && c.devHoldRate != null && c.devHoldRate > f.maxDevHoldRate)
-    fail(`devHold ${(c.devHoldRate * 100).toFixed(1)}% > ${f.maxDevHoldRate * 100}%`);
+    fail(`devHold ${c.devHoldRate.toFixed(1)}% > ${f.maxDevHoldRate}%`);
   if (f.maxBotDegenRate != null && c.botDegenRate != null && c.botDegenRate > f.maxBotDegenRate)
     fail(`botDegenRate ${c.botDegenRate.toFixed(2)} > ${f.maxBotDegenRate}`);
   if (f.maxFreshWalletRate != null && c.freshWalletRate != null && c.freshWalletRate > f.maxFreshWalletRate)
