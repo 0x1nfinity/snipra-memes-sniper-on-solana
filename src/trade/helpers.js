@@ -39,11 +39,10 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
   if (openPositions().length >= effMax)
     throw new Error(`max positions (${effMax}) reached`);
 
-  if (cfg.trading.buyFreshnessCheck) {
-    // Ambil ulang data market TERBARU — kandidat auto-buy bisa sudah basi/rug sejak
-    // screening. Merge hasil fresh ke c agar entryPrice memakai harga terbaru; field
-    // pipeline (exitGenes/genomeId/llmVerdict) tidak ada di hasil resolveCandidate
-    // sehingga otomatis selamat dari merge.
+  // buyFreshnessCheck: skip untuk section "completed" — token completed sudah mature,
+  // data DexScreener & GMGN sering berbeda (liq/mcap lebih rendah di DS), menyebabkan
+  // 30/30 kandidat gagal recheck padahal sudah lolos screening GMGN.
+  if (cfg.trading.buyFreshnessCheck && cfg.screener.section !== 'completed') {
     const fresh = await resolveCandidate(chainKey, c.address);
     const res = evaluate(fresh, cfg.screener.filters);
     if (!res.pass) throw new Error(`freshness recheck failed: ${res.reasons.join(', ')}`);
