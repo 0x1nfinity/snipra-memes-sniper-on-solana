@@ -41,6 +41,8 @@ skills-lock.json
 
 # Local spec document (Indonesian, gitignored)
 SPEC.md
+nug.mg
+bug.md
 
 # Claude Code
 .claude/
