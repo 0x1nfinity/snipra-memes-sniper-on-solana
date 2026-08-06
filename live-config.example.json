@@ -22,7 +22,7 @@
   "screener": {
     // Max new candidates evaluated per screening cycle.
     "maxCandidatesPerCycle": 3,
-    // GMGN trench section: 'new_creation' | 'near_completion' | 'completed'
+    // GMGN trench section: 'new_creation' | 'completed' | 'pump'
     "section": "new_creation",
     "filters": {
       // Whitelist launchpads (e.g. ["Pump.fun"]). [] or null = all launchpads.

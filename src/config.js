@@ -70,7 +70,7 @@ export const DEFAULTS = {
   screener: {
     maxCandidatesPerCycle: 3,
     source: 'gmgn',                     // 'gmgn' | 'dexscreener'
-    section: 'new_creation',            // 'new_creation' | 'near_completion' | 'completed'
+    section: 'new_creation',            // 'new_creation' | 'completed' | 'pump'
     filters: {
       launchpads: ['Pump.fun'],         // [] or null = all launchpads
       minVolume24h: 50000,
