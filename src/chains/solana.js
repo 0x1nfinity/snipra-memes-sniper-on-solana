@@ -144,10 +144,42 @@ export class SolanaChain {
 
     const tx = VersionedTransaction.deserialize(Buffer.from(swapRes.swapTransaction, 'base64'));
     tx.sign([this.wallet]);
-    const txid = await this.connection.sendRawTransaction(tx.serialize(), {
-      skipPreflight: true,
-      maxRetries: 3,
-    });
+    let txid;
+    try {
+      txid = await this.connection.sendRawTransaction(tx.serialize(), {
+        skipPreflight: true,
+        maxRetries: 3,
+      });
+    } catch (e) {
+      // Transaction too large (1680 bytes > 1644 byte limit) — Jupiter route has too
+      // many intermediate accounts. Retry once without the platform fee account to
+      // shave ~32 bytes off the serialized tx.
+      if (e.message?.includes('too large')) {
+        log.warn('Jupiter tx too large, retrying without fee account');
+        const leanQuote = await fetchJson(`${base}/quote?${q}`, { headers: this._jupHeaders() });
+        if (!leanQuote?.outAmount) throw e;
+        const leanSwap = await fetchJson(`${base}/swap`, {
+          method: 'POST',
+          headers: this._jupHeaders(),
+          body: JSON.stringify({
+            quoteResponse: leanQuote,
+            userPublicKey: this.wallet.publicKey.toBase58(),
+            wrapAndUnwrapSol: true,
+            dynamicComputeUnitLimit: true,
+            prioritizationFeeLamports: 'auto',
+          }),
+        });
+        if (!leanSwap?.swapTransaction) throw e;
+        const tx2 = VersionedTransaction.deserialize(Buffer.from(leanSwap.swapTransaction, 'base64'));
+        tx2.sign([this.wallet]);
+        txid = await this.connection.sendRawTransaction(tx2.serialize(), {
+          skipPreflight: true,
+          maxRetries: 3,
+        });
+      } else {
+        throw e;
+      }
+    }
     const confirmed = await this._confirm(txid);
     if (confirmed === 'timeout') {
       // tx sudah broadcast via sendRawTransaction (skipPreflight:true, maxRetries:3).
