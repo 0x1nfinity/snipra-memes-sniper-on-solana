@@ -178,7 +178,7 @@ GMGN sets `c.security.top10Pct = raw * 100` (treating raw as fraction) AND `c.to
 
 GMGN-specific risk filters (rugRatio, bundlerRate, insiderRate, top10HolderRate, botDegenRate, etc.) silently pass for DexScreener-sourced candidates because those fields are null/undefined. This means the effective security bar is lower for DexScreener fallback tokens.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — conservative defaults (0.5) applied for null GMGN fields in evaluate()
 **Found by:** Audit (agent screener)
 
 ### B21 🟡 [SCREENER] Price data defaults to 0 if enrichPrice fails
@@ -194,7 +194,7 @@ GMGN-specific risk filters (rugRatio, bundlerRate, insiderRate, top10HolderRate,
 
 `authorityActive(d.freezable)` treats ANY token with active freeze authority as a honeypot. This incorrectly flags legitimate tokens (e.g., USDC) as honeypots, causing `blockHoneypot` to reject them.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — freeze authority separated into `freezable` field, honeypot = non_transferable only; bot.js display updated
 **Found by:** Audit (agent screener)
 
 ### B23 🟡 [SCREENER] GoPlus cache unbounded growth
@@ -202,7 +202,7 @@ GMGN-specific risk filters (rugRatio, bundlerRate, insiderRate, top10HolderRate,
 
 The Map-based cache has no size limit. In a long-running process screening many unique tokens, expired entries are logically dead but never removed from the Map. Memory leak over hours/days.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — LRU eviction at 1000 entries, expired entries deleted on access
 **Found by:** Audit (agent screener)
 
 ### B24 🟡 [SCREENER] Transient GoPlus failures cached as permanent null
@@ -210,7 +210,7 @@ The Map-based cache has no size limit. In a long-running process screening many 
 
 When `fetchJson` throws, `null` is cached for 10 minutes. A transient network error becomes a 10-minute blackout for that token's security data. No retry.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — differentiated TTL: network errors = 60s, permanent results = 10min
 **Found by:** Audit (agent screener)
 
 ---

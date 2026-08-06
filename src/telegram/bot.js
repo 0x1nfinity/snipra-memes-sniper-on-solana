@@ -151,7 +151,7 @@ export class Telegram {
       (gmgn ? `${gmgn}\n` : '') +
       (c.launchpad ? `🚀 ${c.launchpad}\n` : '') +
       (c.security
-        ? `🛡 ${c.security.honeypot ? '🚨 honeypot/freezable' : '✅ safe'}${c.security.washTrading ? ' · 🚨 wash trading' : ''}\n`
+        ? `🛡 ${c.security.honeypot ? '🚨 honeypot' : ''}${c.security.freezable ? ' ⚠️ freezable' : ''}${!c.security.honeypot && !c.security.freezable ? '✅ safe' : ''}${c.security.washTrading ? ' · 🚨 wash trading' : ''}\n`
         : '') +
       `\`${c.address}\``
     );

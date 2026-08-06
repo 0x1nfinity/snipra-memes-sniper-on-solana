@@ -4,18 +4,30 @@ import { createLogger } from '../logger.js';
 const log = createLogger('goplus');
 const BASE = 'https://api.gopluslabs.io/api/v1';
 
-// Cache 10 menit — data security jarang berubah dan GoPlus punya rate limit.
+// Cache dengan LRU eviction + differentiated TTL.
+// - Hasil permanen (token found / not found): TTL 10 menit
+// - Network error: TTL 1 menit (retry cepat)
 const cache = new Map();
-const TTL = 10 * 60 * 1000;
+const MAX_CACHE = 1000;
+const TTL_PERMANENT = 10 * 60 * 1000;
+const TTL_TRANSIENT = 60 * 1000;
 
 function cached(key) {
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.t < TTL) return hit.v;
+  if (!hit) return undefined;
+  if (Date.now() - hit.t < hit.ttl) return hit.v;
+  // expired — hapus dan return undefined
+  cache.delete(key);
   return undefined;
 }
 
-function store(key, v) {
-  cache.set(key, { t: Date.now(), v });
+function store(key, v, transient = false) {
+  // LRU eviction: hapus entry tertua jika melebihi kapasitas
+  if (cache.size >= MAX_CACHE) {
+    const oldest = cache.keys().next().value;
+    if (oldest) cache.delete(oldest);
+  }
+  cache.set(key, { t: Date.now(), v, ttl: transient ? TTL_TRANSIENT : TTL_PERMANENT });
   return v;
 }
 
@@ -41,14 +53,17 @@ export async function solanaSecurity(address) {
   try {
     const res = await fetchJson(`${BASE}/solana/token_security?contract_addresses=${address}`);
     const d = res?.result?.[address];
-    if (!d) return store(key, null);
+    if (!d) return store(key, null); // token not found → permanent cache
     const authorityActive = (auth) =>
       Array.isArray(auth) ? auth.length > 0 : auth?.authority?.length > 0;
     return store(key, {
       holders: d.holder_count != null ? Number(d.holder_count) : null,
       top10Pct: top10Pct(d.holders),
       top10HolderRate: top10Pct(d.holders),
-      honeypot: authorityActive(d.freezable) || d.non_transferable === '1',
+      // Freeze authority ≠ honeypot. USDC, USDT, dan token besar lainnya punya
+      // freeze authority resmi. Hanya blokir token yang benar-benar non-transferable.
+      honeypot: d.non_transferable === '1',
+      freezable: authorityActive(d.freezable),
       buyTaxPct: null, // konsep tax tidak berlaku umum di SPL
       sellTaxPct: null,
       mintable: authorityActive(d.mintable),
@@ -57,7 +72,8 @@ export async function solanaSecurity(address) {
     });
   } catch (e) {
     log.warn(`solanaSecurity ${address} failed:`, e.message);
-    return null;
+    // Network error → short TTL agar retry cepat, bukan blackout 10 menit
+    return store(key, null, true);
   }
 }
 
