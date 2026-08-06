@@ -7,11 +7,10 @@ import { createLogger } from '../logger.js';
 const log = createLogger('llm');
 const LESSONS_FILE = path.join(DATA_DIR, 'lessons.json');
 
-let lessons = [];
-
 export class LLM {
   constructor({ backend } = {}) {
     this._history = [];
+    this._lessons = [];   // instance-level — no shared module state
     this._backend = backend || null;
   }
 
@@ -19,10 +18,13 @@ export class LLM {
     if (fs.existsSync(LESSONS_FILE)) {
       try {
         const all = JSON.parse(fs.readFileSync(LESSONS_FILE, 'utf8'));
-        lessons = all.filter((l) => l.lang === 'en');
-        if (lessons.length !== all.length) {
+        const en = all.filter((l) => l.lang === 'en');
+        if (en.length !== all.length) {
+          this._lessons = en;
           this._persistLessons();
-          log.info(`purged ${all.length - lessons.length} old non-English lessons`);
+          log.info(`purged ${all.length - en.length} old non-English lessons`);
+        } else {
+          this._lessons = en;
         }
       } catch { /* mulai kosong */ }
     }
@@ -30,7 +32,7 @@ export class LLM {
   }
 
   _persistLessons() {
-    fs.writeFileSync(LESSONS_FILE, JSON.stringify(lessons, null, 2));
+    fs.writeFileSync(LESSONS_FILE, JSON.stringify(this._lessons, null, 2));
   }
 
   available() {
@@ -41,13 +43,13 @@ export class LLM {
 
   _lessonBlock() {
     const { maxLessons } = getConfig().llm;
-    const recent = lessons.slice(-maxLessons);
+    const recent = this._lessons.slice(-maxLessons);
     if (recent.length === 0) return '(none yet)';
     return recent.map((l, i) => `${i + 1}. [${l.outcome}] ${l.text}`).join('\n');
   }
 
   getLessons(n = 10) {
-    return lessons.slice(-n);
+    return this._lessons.slice(-n);
   }
 
   async assessBatch(candidates) {
@@ -61,7 +63,7 @@ export class LLM {
     try {
       const lesson = await this._backend.recordLesson(trade);
       if (lesson) {
-        lessons.push({
+        this._lessons.push({
           text: String(lesson).slice(0, 300),
           outcome: trade.finalPnlPct >= 0 ? 'WIN' : 'LOSS',
           symbol: trade.symbol,
@@ -70,7 +72,7 @@ export class LLM {
           lang: 'en',
           at: Date.now(),
         });
-        if (lessons.length > 200) lessons = lessons.slice(-200);
+        if (this._lessons.length > 200) this._lessons = this._lessons.slice(-200);
         this._persistLessons();
         log.info(`new lesson: ${lesson}`);
         return lesson;
@@ -88,7 +90,7 @@ export class LLM {
       const newLessonsData = await this._backend.deriveLessons(trades, existingLessons || []);
       const saved = [];
       for (const l of newLessonsData) {
-        lessons.push({
+        this._lessons.push({
           text: String(l.text).slice(0, 300),
           outcome: l.outcome === 'LOSS' ? 'LOSS' : l.outcome === 'PATTERN' ? 'PATTERN' : 'WIN',
           symbol: '*',
@@ -99,7 +101,7 @@ export class LLM {
         });
         saved.push(l.text);
       }
-      if (lessons.length > 200) lessons = lessons.slice(-200);
+      if (this._lessons.length > 200) this._lessons = this._lessons.slice(-200);
       this._persistLessons();
       log.info(`deriveResetLessons: ${saved.length} strategic lessons saved`);
       return saved;
@@ -152,8 +154,12 @@ export class LLM {
       finalText = msg.content || '';
       break;
     }
-    this._history.push({ role: 'user', content: userText }, { role: 'assistant', content: finalText });
-    if (this._history.length > 12) this._history = this._history.slice(-12);
+    // Save full turn including all intermediate tool messages to history
+    // so follow-up messages retain context of what tools did.
+    for (const m of messages) {
+      if (m.role !== 'system') this._history.push(m);
+    }
+    if (this._history.length > 24) this._history = this._history.slice(-24);
     return finalText || '(tidak ada jawaban)';
   }
 

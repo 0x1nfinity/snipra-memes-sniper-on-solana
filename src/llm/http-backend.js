@@ -1,5 +1,30 @@
 import { getConfig } from '../config.js';
 import { fetchJson, sanitizePromptField } from '../utils.js';
+import { createLogger } from '../logger.js';
+
+const log = createLogger('http-backend');
+
+/**
+ * Parse JSON dengan fallback regex extraction dari markdown code blocks.
+ * Model murah kadang membungkus JSON dalam ```json ... ``` atau ``` ... ```.
+ */
+function tryParseJson(content) {
+  try {
+    return JSON.parse(content);
+  } catch {
+    // Try extracting from ```json ... ``` block
+    const fenced = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+    if (fenced) {
+      try { return JSON.parse(fenced[1]); } catch { /* continue */ }
+    }
+    // Try extracting the first { ... } or [ ... ] object
+    const bare = content.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+    if (bare) {
+      try { return JSON.parse(bare[1]); } catch { /* continue */ }
+    }
+    throw new Error(`Failed to parse JSON from LLM response: ${content.slice(0, 200)}`);
+  }
+}
 
 const PROVIDERS = {
   openrouter: {
@@ -99,7 +124,7 @@ Reply ONLY JSON: {"verdicts":[{"index":<int>,"action":"buy"|"skip","confidence":
     // memotong respons batch besar, dan JSON terpotong = seluruh batch gagal parse.
     const maxTokens = Math.min(4000, 300 + 120 * candidates.length);
     const content = await this._chat([{ role: 'user', content: prompt }], { model, maxTokens });
-    const parsed = JSON.parse(content);
+    const parsed = tryParseJson(content);
     return parseBatchVerdicts(parsed, candidates.length);
   }
 
@@ -116,7 +141,7 @@ TRADE:
 
 Reply ONLY JSON: {"lesson":"<english lesson>"}`;
     const content = await this._chat([{ role: 'user', content: prompt }]);
-    const parsed = JSON.parse(content);
+    const parsed = tryParseJson(content);
     if (parsed.lesson) return String(parsed.lesson).slice(0, 300);
     return null;
   }
@@ -144,7 +169,7 @@ Balas HANYA JSON: {"genes": {<nama filter>: <angka>, ...}, "rationale": "<2-3 ka
 Sertakan HANYA filter yang ingin kamu ubah dari baseline (boleh subset, boleh kosong bila tidak ada usulan).`;
 
     const content = await this._chat([{ role: 'user', content: prompt }]);
-    const parsed = JSON.parse(content);
+    const parsed = tryParseJson(content);
     if (!parsed?.genes || typeof parsed.genes !== 'object') return null;
     return {
       genes: parsed.genes,
@@ -171,7 +196,7 @@ ${lessonLines || '(none)'}
 
 Reply ONLY JSON: {"lessons":[{"text":"...","outcome":"WIN|LOSS|PATTERN"}, ...]}`;
     const content = await this._chat([{ role: 'user', content: prompt }]);
-    const parsed = JSON.parse(content);
+    const parsed = tryParseJson(content);
     const lessons = [];
     if (Array.isArray(parsed.lessons)) {
       for (const l of parsed.lessons) {

@@ -220,33 +220,33 @@ When `fetchJson` throws, `null` is cached for 10 minutes. A transient network er
 ### B25 🟡 [LLM] Module-level mutable lessons array
 **File:** `src/llm/llm.js`
 
-`let lessons = []` is module-scoped. Multiple LLM instances all mutate the same array — race condition and violates instance isolation.
+`let lessons = []` was module-scoped. Multiple LLM instances all mutated the same array — race condition and violates instance isolation.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — lessons moved to instance property `this._lessons`
 **Found by:** Audit (agent LLM)
 
 ### B26 🟡 [LLM] chat() drops tool-call messages from history
 **File:** `src/llm/llm.js:155`
 
-Only final user and assistant messages are saved to history. All intermediate tool-call and tool-result messages are lost. Follow-up messages lack context of what tools did previously.
+Only final user and assistant messages were saved to history. All intermediate tool-call and tool-result messages were lost. Follow-up messages lacked context of what tools did previously.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — all non-system messages (incl. tool_call + tool_result) saved to history; limit raised to 24
 **Found by:** Audit (agent LLM)
 
 ### B27 🟡 [LLM] No JSON parse retry in http-backend
 **File:** `src/llm/http-backend.js`
 
-Every method calls `JSON.parse(content)` with zero error recovery. If the LLM returns malformed JSON (common with cheap models), the entire operation fails. No retry, no regex extraction fallback.
+Every method called `JSON.parse(content)` with zero error recovery. If the LLM returns malformed JSON (common with cheap models), the entire operation fails. No retry, no regex extraction fallback.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — tryParseJson() helper with markdown code block + bare object extraction fallback
 **Found by:** Audit (agent LLM)
 
 ### B28 🟡 [LLM] StdioBackend chat() destroys multi-turn conversation
 **File:** `src/llm/stdio-backend.js:176-180`
 
-Extracts only system message and last user message, discarding all assistant/tool messages. True multi-turn conversations impossible through this backend.
+Extracted only system message and last user message, discarding all assistant/tool messages. True multi-turn conversations impossible through this backend.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — full message history serialized into transcript for the platform agent
 **Found by:** Audit (agent LLM)
 
 ### B29 🔴 [LLM] fetchJson retries on all errors including permanent ones

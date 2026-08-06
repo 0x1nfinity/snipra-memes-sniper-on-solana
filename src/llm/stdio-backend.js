@@ -172,12 +172,26 @@ Reply ONLY JSON: {"lessons":[{"text":"...","outcome":"WIN|LOSS|PATTERN"}, ...]}`
   }
 
   async chat(messages, { tools = null } = {}) {
-    // Extract system and user from messages for the protocol
+    // Serialize full message history so the platform agent has multi-turn context.
+    // Protocol expects system + user, so we pack history into the user field.
     const systemMsg = messages.find((m) => m.role === 'system');
-    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-
     const system = systemMsg?.content || '';
-    const user = lastUser?.content || '';
+
+    // Build a readable transcript of non-system messages for the agent
+    const transcript = messages
+      .filter((m) => m.role !== 'system')
+      .map((m) => {
+        if (m.role === 'user') return `[USER]: ${m.content}`;
+        if (m.role === 'assistant') {
+          if (m.tool_calls?.length) return `[ASSISTANT tool_calls]: ${JSON.stringify(m.tool_calls)}`;
+          return `[ASSISTANT]: ${m.content || ''}`;
+        }
+        if (m.role === 'tool') return `[TOOL RESULT id=${m.tool_call_id}]: ${m.content}`;
+        return `[${m.role}]: ${m.content || ''}`;
+      })
+      .join('\n');
+
+    const user = transcript || messages.filter((m) => m.role === 'user').pop()?.content || '';
 
     const resp = await this._request('chat', system, user, {
       reply: 'string (Indonesian, santai tapi tajam, ringkas)',
