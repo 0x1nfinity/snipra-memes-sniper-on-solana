@@ -148,14 +148,13 @@ npm run skill-dev    # Skill mode, paper trading
 | `SOLANA_RPC_URL` | Live mode only | Dedicated RPC endpoint recommended |
 | `OPENROUTER_API_KEY` | Standalone LLM | OpenRouter API key |
 | `DEEPSEEK_API_KEY` | Standalone LLM | DeepSeek API key (alternative) |
-| `GMGN_API_KEYS` | GMGN discovery | Comma-separated API keys for token discovery |
-| `GMGN_API_KEY` | GMGN wallet tracking | Single API key for wallet activity/stats |
+| `GMGN_API_KEYS` | GMGN (both) | Comma-separated API keys for discovery + wallet tracking |
 
 ### npm Scripts
 
 | Script | Mode | Description |
 |--------|------|-------------|
-| `npm run dev` | Standalone | Paper trading, DRY_RUN=1 forced |
+| `npm run dev` | Standalone | Paper trading, SNIPRA_MODE=paper forced |
 | `npm start` | Standalone | Live trading (or paper if SNIPRA_MODE=paper) |
 | `npm run screen` | Standalone | Screen once, print candidates, exit |
 | `npm run skill-dev` | Skill | Paper trading via stdin/stdout protocol |

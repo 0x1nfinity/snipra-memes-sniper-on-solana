@@ -29,10 +29,10 @@ This bot is **agent-agnostic** — it communicates via stdin/stdout JSON protoco
 node src/skills/runner.js --skill-mode
 ```
 
-For paper trading (dry run):
+For paper trading:
 
 ```bash
-DRY_RUN=1 node src/skills/runner.js --skill-mode
+SNIPRA_MODE=paper node src/skills/runner.js --skill-mode
 ```
 
 The bot prints `{"type":"ready","version":"2.0.0"}` when ready.

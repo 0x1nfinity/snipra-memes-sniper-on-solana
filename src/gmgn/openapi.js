@@ -6,13 +6,20 @@ const log = createLogger('gmgn-openapi');
 
 const BASE = 'https://openapi.gmgn.ai';
 
+/** Return the first key from GMGN_API_KEYS (comma-separated env var). */
+export function getGmgnApiKey() {
+  const keys = (process.env.GMGN_API_KEYS || '').split(',').map((k) => k.trim()).filter(Boolean);
+  return keys[0] || '';
+}
+
 function authQuery() {
   return { timestamp: Math.floor(Date.now() / 1000), client_id: crypto.randomUUID() };
 }
 
 function headers() {
-  if (!process.env.GMGN_API_KEY) throw new Error('GMGN_API_KEY is empty');
-  return { 'X-APIKEY': process.env.GMGN_API_KEY, 'Content-Type': 'application/json' };
+  const key = getGmgnApiKey();
+  if (!key) throw new Error('GMGN_API_KEYS is empty — set at least one key');
+  return { 'X-APIKEY': key, 'Content-Type': 'application/json' };
 }
 
 /** GET /v1/user/wallet_activity — per-transaction activity/trade history for a wallet. */
@@ -31,11 +38,11 @@ export async function walletActivity(walletAddress, { chain = 'sol', token, limi
 
 /**
  * Poll wallet_activity for the entry whose tx_hash exactly matches ours.
- * Returns null immediately (no retries) if GMGN_API_KEY is unset — no point
+ * Returns null immediately (no retries) if GMGN_API_KEYS is unset — no point
  * burning the retry budget on a guaranteed failure.
  */
 export async function findActivityByTx(walletAddress, tokenAddress, txid, { attempts = 5, delayMs = 1500 } = {}) {
-  if (!process.env.GMGN_API_KEY) return null;
+  if (!getGmgnApiKey()) return null;
   for (let i = 0; i < attempts; i++) {
     try {
       const res = await walletActivity(walletAddress, { token: tokenAddress, limit: 20 });
@@ -55,7 +62,7 @@ export async function findActivityByTx(walletAddress, tokenAddress, txid, { atte
 
 /** GET /v1/user/wallet_stats — aggregate realized PnL/winrate/cost for a wallet over a period. */
 export async function walletStats(walletAddress, { chain = 'sol', period = '7d' } = {}) {
-  if (!process.env.GMGN_API_KEY) throw new Error('GMGN_API_KEY not set — walletStats unavailable');
+  if (!getGmgnApiKey()) throw new Error('GMGN_API_KEYS not set — walletStats unavailable');
   const q = new URLSearchParams({ chain, wallet_address: walletAddress, period, ...authQuery() });
   return fetchJson(`${BASE}/v1/user/wallet_stats?${q}`, { headers: headers() });
 }

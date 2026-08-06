@@ -8,7 +8,7 @@ import {
 import bs58 from 'bs58';
 import { fetchJson, sleep } from '../utils.js';
 import { createLogger } from '../logger.js';
-import { findActivityByTx } from '../gmgn/openapi.js';
+import { findActivityByTx, getGmgnApiKey } from '../gmgn/openapi.js';
 
 const log = createLogger('solana');
 
@@ -161,7 +161,8 @@ export class SolanaChain {
   }
 
   async _gmgnSwap(inputMint, outputMint, rawAmount, slippageBps) {
-    if (!process.env.GMGN_API_KEY) throw new Error('GMGN_API_KEY is empty');
+    const gmgnKey = getGmgnApiKey();
+    if (!gmgnKey) throw new Error('GMGN_API_KEYS is empty');
     const q = new URLSearchParams({
       token_in_address: inputMint,
       token_out_address: outputMint,
@@ -170,7 +171,7 @@ export class SolanaChain {
       slippage: String(slippageBps / 100),
     });
     const route = await fetchJson(`${GMGN_BASE}/defi/router/v1/sol/tx/get_swap_route?${q}`, {
-      headers: { 'x-route-key': process.env.GMGN_API_KEY },
+      headers: { 'x-route-key': gmgnKey },
     });
     const rawTx = route?.data?.raw_tx?.swapTransaction;
     if (!rawTx) throw new Error(`GMGN route failed: ${JSON.stringify(route).slice(0, 200)}`);
@@ -185,7 +186,7 @@ export class SolanaChain {
     const signed = Buffer.from(tx.serialize()).toString('base64');
     const sent = await fetchJson(`${GMGN_BASE}/txproxy/v1/send_transaction`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-route-key': process.env.GMGN_API_KEY },
+      headers: { 'Content-Type': 'application/json', 'x-route-key': gmgnKey },
       body: JSON.stringify({ chain: 'sol', signedTx: signed }),
     });
     const txid = sent?.data?.hash;
@@ -209,7 +210,7 @@ export class SolanaChain {
   }
 
   async _swap(inputMint, outputMint, rawAmount, slippageBps) {
-    if (this.cfg.executor === 'gmgn' && process.env.GMGN_API_KEY) {
+    if (this.cfg.executor === 'gmgn' && gmgnKey) {
       try {
         return await this._gmgnSwap(inputMint, outputMint, rawAmount, slippageBps);
       } catch (e) {

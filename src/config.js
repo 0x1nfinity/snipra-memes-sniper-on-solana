@@ -267,7 +267,7 @@ function buildConfig(mode) {
   };
 
   // gmgnApiKeys dibaca dari env, bukan dari file config
-  const keysEnv = process.env.GMGN_API_KEYS || process.env.GMGN_API_KEY || '';
+  const keysEnv = process.env.GMGN_API_KEYS || '';
   merged.screener.gmgnApiKeys = keysEnv.split(',').map((k) => k.trim()).filter(Boolean);
 
   // Apply strategy preset filter overrides (no-op when strategy === 'myself')
@@ -312,17 +312,6 @@ export function loadConfig() {
     config = structuredClone(DEFAULTS);
   }
 
-  // DRY_RUN override: jika diset, paksa paper
-  if (process.env.DRY_RUN === '1' && activeMode !== 'paper') {
-    log.warn(`⚠️ DRY_RUN=1 in .env FORCES mode 'paper' even though mode='${activeMode}'. Set DRY_RUN=0 for live.`);
-    activeMode = 'paper';
-    try {
-      config = buildConfig(activeMode);
-    } catch (e) {
-      log.error(`live-config.json corrupted, using defaults:`, e.message);
-      config = structuredClone(DEFAULTS);
-    }
-  }
 
   return config;
 }
