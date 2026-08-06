@@ -1,8 +1,6 @@
 # Dependencies
 node_modules/
 package-lock.json
-.bak
-.bak/*
 
 # Environment variables (secrets)
 .env
@@ -31,6 +29,19 @@ build/
 *~
 .DS_Store
 
+# Platform agent dirs (local only)
+.opencode/
+.forge/
+
+# Skill lock file (platform-specific, generated at install time)
+skills-lock.json
+
+# Backup files
+*.bak
+
+# Local spec document (Indonesian, gitignored)
+SPEC.md
+
 # Claude Code
 .claude/
 .superpowers/
@@ -41,7 +52,7 @@ docs/superpowers/
 # the bot also auto-creates these with defaults on first run.
 live-config.json
 paper-config.json
-# Old config (migrated to paper-config.json + live-config.json)
+# Old unified config (migrated to paper-config.json + live-config.json)
 config.json
 # Old naming scheme (pre-v2 rename)
 config.live.json

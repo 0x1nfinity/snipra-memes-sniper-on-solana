@@ -2,8 +2,9 @@ import { openPositions } from '../../positions/state.js';
 import { tokenLink, fmtPct, fmtUsd, shortAddr } from '../../utils.js';
 
 export async function buy(args, msg, deps) {
-  if (args.length < 2) return deps.send('Usage: /buy <chain> <address> [amount]');
-  const [chain, address, amount] = args;
+  if (args.length < 1) return deps.send('Usage: /buy <address> [amount]');
+  const chain = 'solana';
+  const [address, amount] = args;
   const pos = await deps.buyToken(chain, address, amount ? Number(amount) : undefined, 'manual');
   const saldo = await deps.executor.chain(chain).nativeBalance().catch(() => null);
   return deps.send(

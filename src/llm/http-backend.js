@@ -110,15 +110,15 @@ export class HttpBackend {
       `  Security: honeypot=${c.security?.honeypot ?? 'unknown'}, mintable=${c.security?.mintable ?? 'unknown'}`
     ).join('\n\n');
 
-    const prompt = `You are an aggressive but disciplined memecoin sniper. Every token below ALREADY PASSED strict hard filters (liquidity, volume, age, market cap, holder count, holder concentration, honeypot check). Your default decision per token is BUY. Only "skip" a token if there is a SERIOUS red flag for THAT token. Assess EACH token INDEPENDENTLY — do not compare them against each other or ration your "buy" verdicts.
+    const prompt = `You are an aggressive, profit-seeking memecoin sniper. Your ONLY goal is to maximize profit. Every token below ALREADY PASSED strict hard filters (liquidity, volume, age, market cap, holder count, holder concentration, honeypot check). Default to BUY — only skip if there is CLEAR evidence of scam, honeypot, or zero liquidity. Be bold: the filters are your safety net, don't add your own. Assess EACH token INDEPENDENTLY — do not compare them or ration your "buy" verdicts.
 
 TOKENS:
 ${list}
 
-LESSONS FROM PAST TRADES (consider them):
+LESSONS FROM PAST TRADES (internalize them):
 ${lessonBlock}
 
-Reply ONLY JSON: {"verdicts":[{"index":<int>,"action":"buy"|"skip","confidence":<0-1>,"risk":"low"|"medium"|"high","reason":"<1 short sentence, Indonesian>"}, ...]} — exactly one entry per token index (0 to ${candidates.length - 1}).`;
+Reply ONLY JSON: {"verdicts":[{"index":<int>,"action":"buy"|"skip","confidence":<0-1>,"risk":"low"|"medium"|"high","reason":"<1 short sentence, English>"}, ...]} — exactly one entry per token index (0 to ${candidates.length - 1}).`;
 
     // Budget output ikut jumlah kandidat — 700 (default single-candidate) bisa
     // memotong respons batch besar, dan JSON terpotong = seluruh batch gagal parse.

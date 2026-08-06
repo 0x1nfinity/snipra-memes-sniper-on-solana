@@ -18,7 +18,7 @@ const COMMANDS = [
   { command: 'status', description: 'Bot status, mode, positions & balance' },
   { command: 'stats', description: 'Win rate, avg PnL, last trades' },
   { command: 'screen', description: 'Screen now + immediately buy candidates that pass' },
-  { command: 'buy', description: 'Buy manual: /buy <chain> <address> [amount]' },
+  { command: 'buy', description: 'Buy manual: /buy <address> [amount]' },
   { command: 'sell', description: 'Sell a position: /sell <address> [pct]' },
   { command: 'closeall', description: 'Close ALL open positions now' },
   { command: 'menu', description: 'Quick settings button panel' },
@@ -35,6 +35,7 @@ const COMMANDS = [
   { command: 'lessons', description: 'Lessons from LLM analysis' },
   { command: 'logs', description: 'Recent bot logs' },
   { command: 'gmgnactivity', description: '[debug] Raw GMGN wallet_activity response' },
+  { command: 'briefings', description: 'Manual daily briefing (positions, PnL, lessons)' },
   { command: 'help', description: 'Full command list' },
   { command: 'stop', description: 'Shut down the bot' },
 ];

@@ -59,7 +59,7 @@ export class StdioBackend {
       `  Price change: 1h ${c.priceChange?.h1}% | 6h ${c.priceChange?.h6}% | 24h ${c.priceChange?.h24}%\n` +
       `  Security: honeypot=${c.security?.honeypot ?? 'unknown'}, mintable=${c.security?.mintable ?? 'unknown'}`
     ).join('\n\n');
-    const user = `TOKENS:\n${list}\n\nLESSONS FROM PAST TRADES:\n${lessonBlock}\n\nReply ONLY JSON: {"verdicts":[{"index":<int>,"action":"buy"|"skip","confidence":<0-1>,"risk":"low"|"medium"|"high","reason":"<1 short sentence, Indonesian>"}, ...]} — exactly one entry per token index (0 to ${candidates.length - 1}).`;
+    const user = `TOKENS:\n${list}\n\nLESSONS FROM PAST TRADES:\n${lessonBlock}\n\nReply ONLY JSON: {"verdicts":[{"index":<int>,"action":"buy"|"skip","confidence":<0-1>,"risk":"low"|"medium"|"high","reason":"<1 short sentence, English>"}, ...]} — exactly one entry per token index (0 to ${candidates.length - 1}).`;
 
     const resp = await this._request('assess_batch', system, user, {
       verdicts: 'array of {index: int, action: "buy"|"skip", confidence: number 0-1, risk: "low"|"medium"|"high", reason: string}',
@@ -108,7 +108,7 @@ Write ONE short lesson (max 25 words, ENGLISH). Reply ONLY JSON: {"lesson":"<eng
   }
 
   async suggestGenes({ geneSpace, currentFilters, genomes, trades, lessonsText }) {
-    const system = `Kamu ahli optimasi strategi screening memecoin. Bot memfilter token dengan sekumpulan threshold. Analisis data dan REKOMENDASIKAN perubahan nilai filter. Rekomendasi ini akan DITINJAU MANUAL oleh user (tidak diterapkan otomatis).`;
+    const system = `You are a memecoin screening strategy expert. The bot filters tokens with a set of thresholds. Analyze the data below and RECOMMEND filter value changes that would improve profit. These are MANUAL REVIEW suggestions (not auto-applied), so be concrete with data-backed rationale.`;
     const user = `BATAS WAJAR TIAP FILTER (jangan usulkan di luar range ini):
 ${JSON.stringify(geneSpace, null, 1)}
 
@@ -124,12 +124,12 @@ ${JSON.stringify(trades, null, 1)}
 LESSONS:
 ${lessonsText || '(belum ada)'}
 
-Reply ONLY JSON: {"genes": {<nama filter>: <angka>, ...}, "rationale": "<2-3 kalimat bahasa Indonesia>"}
-Sertakan HANYA filter yang ingin diubah dari baseline.`;
+Reply ONLY JSON: {"genes": {<filter name>: <number>, ...}, "rationale": "<2-3 sentences, English>"}
+Only include filters you want to change from baseline.`;
 
     const resp = await this._request('suggest_genes', system, user, {
       genes: 'object mapping filter names to numbers',
-      rationale: 'string (Indonesian)',
+      rationale: 'string (English)',
     });
 
     if (!resp.ok || !resp.result?.genes || typeof resp.result.genes !== 'object') return null;
@@ -194,7 +194,7 @@ Reply ONLY JSON: {"lessons":[{"text":"...","outcome":"WIN|LOSS|PATTERN"}, ...]}`
     const user = transcript || messages.filter((m) => m.role === 'user').pop()?.content || '';
 
     const resp = await this._request('chat', system, user, {
-      reply: 'string (Indonesian, santai tapi tajam, ringkas)',
+      reply: 'string (English, casual but sharp, concise)',
     });
 
     if (!resp.ok || !resp.result) {

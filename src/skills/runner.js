@@ -13,7 +13,7 @@ import { Telegram } from '../telegram/bot.js';
 import { createScreeningCycle, startScreeningLoop as startScreeningTimer, createBotContext } from '../llm/loops.js';
 import { buyToken, sellToken } from '../trade/helpers.js';
 import { runEvolve, onTradeClosed, setEvolveDeps } from '../darwin/evolve.js';
-import { startStatusLoop, stopStatusLoop, setStatusDeps } from '../telegram/reports.js';
+import { startStatusLoop, stopStatusLoop, setStatusDeps, sendDailyBriefing } from '../telegram/reports.js';
 import { LLM_TOOL_DEFS, createToolRunner } from '../llm/tools.js';
 import { createLogger } from '../logger.js';
 import { sweepStaleCommandFiles, startCommandQueueLoop } from './command-queue.js';
@@ -79,6 +79,7 @@ async function main() {
     runEvolve,
     llmChat: (text) => llm.chat(text, botContext(), getConfig().llm.tools ? { defs: LLM_TOOL_DEFS, run: runLlmTool } : null),
     closeAll: (reason) => positionManager.closeAllPositions(reason),
+    sendDailyBriefing: () => sendDailyBriefing(),
     applyMode,
     restartLoops,
     setPaused: (v) => { paused = v; if (v) stopStatusLoop(); else startStatusLoop(); },

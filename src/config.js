@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createLogger } from './logger.js';
+import { applyStrategy } from './strategies.js';
 
 const log = createLogger('config');
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -60,6 +61,7 @@ export const DEFAULTS = {
   // 'paper' = trade simulasi penuh (harga real, saldo virtual, PnL dicatat ke SQLite)
   // 'live'  = transaksi on-chain sungguhan
   // Mode TIDAK disimpan di sini — dibaca dari data/.mode marker file.
+  strategy: 'myself', // 'myself' | 'sniper' | 'wait_for_dip' | 'smart_money' | 'degen'
   paper: {
     // saldo virtual awal per chain, dalam NATIVE (SOL).
     // Alternatif: startBalanceUsd (angka) utk konversi otomatis dari USD.
@@ -236,6 +238,7 @@ function isPaperOverridePath(pathStr) {
 }
 
 /** Build config aktif: DEFAULTS + live-config.json, lalu (kalau mode paper) di-overlay paper-config.json. */
+
 function buildConfig(mode) {
   const liveFile = configFileFor('live');
   let liveSaved = {};
@@ -266,6 +269,9 @@ function buildConfig(mode) {
   // gmgnApiKeys dibaca dari env, bukan dari file config
   const keysEnv = process.env.GMGN_API_KEYS || process.env.GMGN_API_KEY || '';
   merged.screener.gmgnApiKeys = keysEnv.split(',').map((k) => k.trim()).filter(Boolean);
+
+  // Apply strategy preset filter overrides (no-op when strategy === 'myself')
+  merged = applyStrategy(merged, merged.strategy);
 
   return merged;
 }

@@ -14,6 +14,11 @@
 // (screener, trading, llm, trailing, etc). paper-config.json only
 // overrides a few paper-mode-specific fields on top of this file.
 {
+  // Trading strategy preset — overrides screener.filters.* with a hardcoded
+  // profile. Management settings (TP, SL, trailing, position size, LLM) stay
+  // in this file and are NEVER touched by the preset.
+  // Options: "myself" (full manual control) | "sniper" | "wait_for_dip" | "smart_money" | "degen"
+  "strategy": "myself",
   "screener": {
     // Max new candidates evaluated per screening cycle.
     "maxCandidatesPerCycle": 3,

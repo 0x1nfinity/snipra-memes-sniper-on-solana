@@ -90,7 +90,7 @@ TOKENS:
 Return exactly one entry per token index. Missing index = REJECTED.
 
 ```json
-{"verdicts":[{"index":<int>,"action":"buy"|"skip","confidence":<0-1>,"risk":"low"|"medium"|"high","reason":"<1 short sentence, Indonesian>"},...]}
+{"verdicts":[{"index":<int>,"action":"buy"|"skip","confidence":<0-1>,"risk":"low"|"medium"|"high","reason":"<1 short sentence, English>"},...]}
 ```
 
 #### 2. record_lesson
@@ -104,7 +104,7 @@ Generate one short English lesson (max 150 chars) from a closed trade.
 Recommend filter threshold changes. Advisory only (not auto-applied).
 
 ```json
-{"genes":{"<filter_name>":<number>,...},"rationale":"<2-3 sentences, Indonesian>"}
+{"genes":{"<filter_name>":<number>,...},"rationale":"<2-3 sentences, English>"}
 ```
 
 #### 4. derive_lessons
@@ -123,7 +123,7 @@ Respond to user messages. If `tools` are included, you may call:
 - `get_positions` — current open positions
 
 ```json
-{"reply":"<response text, Indonesian>"}
+{"reply":"<response text, English>"}
 ```
 Or with tool calls:
 ```json
@@ -173,7 +173,7 @@ The command blocks up to 30s and prints the result as JSON. Two different things
 
 Relay the outcome to the user in your own words; do not paste raw JSON at them.
 
-Example: user says "beli token ABC di solana" → run
+Example: user says "buy token ABC on solana" → run
 `node scripts/skill-command.js buy_token '{"chain":"solana","address":"ABC..."}'`
 → report back what happened.
 

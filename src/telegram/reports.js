@@ -18,7 +18,7 @@ let lastBriefingDate = null;
 
 export function consumeBriefingTrigger(nowMs = Date.now()) {
   const { dateStr, hour } = wibDateHour(nowMs);
-  const isBriefing = hour >= 8 && lastBriefingDate !== dateStr;
+  const isBriefing = hour >= 7 && lastBriefingDate !== dateStr;
   if (isBriefing) lastBriefingDate = dateStr;
   return isBriefing;
 }

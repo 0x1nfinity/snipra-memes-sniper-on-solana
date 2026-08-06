@@ -1,169 +1,403 @@
 # snipra v2 — Solana Meme Sniper
 
-Memecoin trading bot for **Solana**.
+Memecoin trading bot for **Solana**. Screens tokens via GMGN/DexScreener, executes trades via Jupiter/GMGN, manages positions with TP ladder + trailing stop + stop-loss, evolves screening filters via Darwin genetic algorithm, and uses LLM analysis to gate buy decisions.
 
-## Mode: paper vs live
+## Two Operating Modes
 
-- **`paper` (default)** — paper trading: runs the exact same pipeline as live (screening → open position → TP ladder/trailing/SL → close) using real-time prices + simulated slippage, but with a **virtual balance** (`paper.startBalance`), never touching on-chain funds. Every closed trade is logged to **SQLite** (`data/snipra.db`, table `trades`) with full PnL. Darwin & the LLM still learn from the results.
-- **`live`** — real on-chain transactions (Jupiter/GMGN on Solana).
+snipra v2 runs in one of two modes — pick based on whether you have your own LLM API keys or prefer your AI coding agent to be the brain:
 
-Switch modes via Telegram `/mode paper|live` (persisted to `data/.mode`, not the config file). Review paper trade history with `/papertrades`, reset the virtual balance with `/paperreset`.
+### 1. Standalone Mode (`npm start`)
+
+The bot runs fully self-contained. You bring your own LLM API keys (OpenRouter or DeepSeek), and the bot handles everything: screening, LLM buy-gating, position management, Telegram notifications + commands.
+
+- **LLM**: Your API keys → HTTP calls to OpenRouter/DeepSeek
+- **Interface**: Telegram bot (full command menu, inline keyboards, notifications)
+- **Start**: `npm run dev` (paper) or `npm start` (live)
+
+### 2. Skills Agentic Mode (`npm run skill-dev` / `npm run skill`)
+
+The bot runs as a long-lived process communicating via stdin/stdout JSON protocol. Your AI coding agent (Claude Code, Codex, OpenCode, Cursor, etc.) becomes the LLM brain — it receives screening requests, evaluates tokens, records lessons, suggests gene mutations, and handles chat, all through the protocol.
+
+- **LLM**: Your platform agent (no API keys needed)
+- **Interface**: Talk to your agent directly (Telegram is notification-only)
+- **Start**: `npm run skill-dev` (paper) or `npm run skill` (live)
+- **Protocol**: `skills/snipra/SKILL.md` — full spec
 
 ## Features
 
-| # | Feature | Implementation |
-|---|---------|-----------------|
-| 1 | Solana meme screening | DexScreener (discovery + pair data) + GoPlus (holders, honeypot, tax) |
-| 2 | SOL↔meme swaps | **Jupiter** lite-api (optional **GMGN** trading API) |
-| 3 | TP ladder | Staged tiers, `sellPct` computed from the remaining position |
-| 4 | Trailing profit | Activates after `activateGainPct`, sells everything on a `trailPct` drop from peak |
-| 5 | Telegram | All config editable via `/set`; `/status` shows open positions & real-time PnL (on-demand on-chain reconcile) in one message |
-| 6 | Darwin system | Filter-genome population → fitness from trade PnL → automatic selection + crossover + mutation |
-| 7 | LLM | OpenRouter / DeepSeek — gates buys + post-mortem lessons re-injected into the prompt |
-| 8 | Position exits | Dynamic volatility-based stop-loss (opt-in), max-hold/sideways-timeout force-close, Jupiter-quote price fallback for stale/thin markets |
-| 9 | Buy safety | Pre-execution freshness recheck + automatic retry on transient failures (auto-buy AND manual `/buy`) |
-| 10 | LLM cost controls | Decision cache (skip re-asking about recently-rejected tokens), free rule-based pre-scorer gate before the LLM, batched multi-candidate LLM calls, optional cheaper model for the batch gate |
+### Screening & Discovery
+| Feature | Description |
+|---------|-------------|
+| **GMGN Discovery** | Primary source — fetches new creations, near-completion, and completed tokens from GMGN trenches |
+| **DexScreener Fallback** | Automatic fallback when GMGN is unavailable |
+| **GoPlus Security** | Honeypot detection, freezable check, holder count, top-10 concentration, mint authority |
+| **Multi-key GMGN** | Comma-separated API keys in `.env` — sequential fallback on failure |
+| **Pre-scorer Gate** | Free rule-based scoring before the LLM (reduces LLM costs) |
+| **20+ Hard Filters** | Volume, liquidity, market cap, holders, swaps, age, bonding progress, rug ratio, bundler rate, insider rate, top-10 concentration, bot/degen rate, fresh wallet rate, dev hold rate, smart degen count, total fees, honeypot block, wash trading block, launchpad whitelist |
 
-## Screening filters (required + additional)
+### Trading & Execution
+| Feature | Description |
+|---------|-------------|
+| **Jupiter Swap** | Default executor — routes through Jupiter lite-api for best price |
+| **GMGN Trading** | Optional executor via GMGN trading API |
+| **TP Ladder** | Staged take-profit tiers — e.g. sell 30% at +40%, 40% at +100%, 50% at +250% |
+| **Trailing Stop** | Activates after `activateGainPct` — trails peak price, sells on `trailPct` drop |
+| **Dynamic Stop-Loss** | Opt-in volatility-based SL — widens in high vol, narrows in low vol (50/50 blend with base SL) |
+| **Moonbag** | Post-TP moonbag system — keeps a % of original position for long-term hold |
+| **Max Hold Timeout** | Force-close positions older than N minutes regardless of PnL |
+| **Sideways Timeout** | Force-close positions stuck in a tight PnL band for too long |
+| **Circuit Breaker** | Rate-limits position opens (3 opens in 60s trips 5-min cooldown) |
+| **Buy Freshness Check** | Re-verifies hard filters just before execution (guards against stale/rugged candidates) |
+| **Buy Retry** | Auto-retries failed swaps with configurable count + delay |
+| **Cooldown** | Prevents re-buying the same token within N minutes (configurable burst allowance) |
+| **Anti-glitch** | Flash-dump detection — delays SL close by one tick if drop is sudden, confirms next tick |
+| **Price Safety** | Ignores prices from near-zero-liquidity pairs; anomaly spike rejection |
 
-Required: `minVolume24hUsd`, `minAgeHours`/`maxAgeHours`, `minLiquidityUsd`, `minMarketCapUsd`/`maxMarketCapUsd`, `minHolders`, `minTraders24h`.
-Additional: buy/sell ratio, 1h anti-dump, volume/liquidity ratio, socials, honeypot/freezable (GoPlus), max buy/sell tax.
+### Darwin Genetic Evolution
+| Feature | Description |
+|---------|-------------|
+| **Genome Population** | 8 genomes (configurable) — each a full set of filter + exit thresholds |
+| **Fitness Tracking** | EMA-weighted PnL (recency bias α=0.2) with small-sample confidence penalty |
+| **Selection** | Elitism + top-half survivors, epsilon-greedy exploration |
+| **Crossover + Mutation** | Gaussian mutation within per-gene bounds, crossover from survivor pairs |
+| **LLM-guided Evolution** | Optional — LLM analyzes genome performance + trade history, proposes guided offspring (max 2) |
+| **Safety Guardrails** | Security filters (honeypot, wash trading) are never evolved; SL/TP-trailing genes only tighten, never loosen |
 
-Numeric filter parameters are **auto-evolved** by the Darwin system; security filters are never loosened by evolution.
+### LLM Integration (Standalone Mode)
+| Feature | Description |
+|---------|-------------|
+| **Batch Assessment** | Multiple candidates in one LLM call — reduces API costs |
+| **Buy Gate** | LLM evaluates tokens that passed hard filters — default bias is BUY |
+| **Decision Cache** | Skip verdicts cached per token (TTL 30 min) — avoids re-asking about stale rejects |
+| **Cheap Model Option** | Separate cheaper model for batch gate vs main model for chat |
+| **Lessons System** | Post-trade lesson extraction → injected into future prompts |
+| **Derive Lessons** | Batch lesson extraction from all closed trades (paper reset) |
+| **Gene Suggestions** | LLM analyzes genome data → proposes filter changes (manual review, not auto-applied) |
+| **Chat with Tools** | Natural language chat → LLM calls tools: screen, buy, sell, close all, get positions |
+
+### Darwin Genetic Evolution
+| Feature | Description |
+|---------|-------------|
+| **Genome Population** | 8 genomes, each a complete set of screening + exit thresholds |
+| **EMA Fitness** | Exponential moving average of trade PnL (α=0.2) — favors recent performance |
+| **Epsilon-greedy Selection** | Explores random genomes 25% of the time, exploits best otherwise |
+| **Crossover + Mutation** | Gaussian mutation (σ per gene), uniform crossover from survivor pairs |
+| **LLM-guided Offspring** | Up to 2 genomes per generation proposed by LLM analysis (clamped to safe ranges) |
+| **Safety Bounds** | Security filters never evolved; SL/trailing genes only tighten from baseline |
+
+### Position Management
+| Feature | Description |
+|---------|-------------|
+| **Monitor Loop** | Runs every N seconds — checks PnL, TP ladder, trailing stop, SL, timeouts |
+| **On-chain Reconcile** | Periodically checks actual on-chain balance vs recorded position — auto-closes if 0 |
+| **Stale Price Warning** | Warns when a position's price has been unavailable for too long |
+
+### Telegram Bot (Standalone Mode)
+| Feature | Description |
+|---------|-------------|
+| **20+ Commands** | status, stats, screen, buy, sell, closeall, menu, config, get, set, darwin, evolve, lessons, logs, briefings, pause, resume, mode, papertrades, paperreset, help, stop |
+| **Inline Keyboards** | Buy/Skip buttons on token lookup cards |
+| **Address Lookup** | Paste a contract address → full token card + Buy button |
+| **Name Search** | Type 1-2 words → top 3 DexScreener results + Buy buttons |
+| **Config Hot-reload** | Edit JSON files directly — bot detects changes without restart |
+| **Runtime /set** | Change any config value via Telegram, persists to file immediately |
+| **Markdown Fallback** | Auto-detects Telegram parse errors → falls back to plain text per chunk |
+| **Periodic Reports** | Configurable interval status reports (balance, positions, PnL) |
+| **Daily Briefing** | 7 AM WIB — 24h trade summary + recent lessons |
+
+### Skill Mode
+| Feature | Description |
+|---------|-------------|
+| **Platform-agnostic** | Works with any agent that can read/write stdin/stdout |
+| **Multi-platform Installer** | `npm run setup` auto-detects Claude Code, Codex, OpenCode, Cursor |
+| **Command Queue** | File-based inbox/outbox — agent writes commands, bot processes them |
+| **Status CLI** | `node scripts/skill-status.js` — read-only snapshot of bot state |
+| **Action CLI** | `node scripts/skill-command.js <tool> '<args>'` — execute bot actions |
+
+## Quick Start
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Configure environment
+cp .env.example .env
+# Edit .env — fill in TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+# For live mode: add SOLANA_PRIVATE_KEY, SOLANA_RPC_URL
+# For standalone LLM: add OPENROUTER_API_KEY or DEEPSEEK_API_KEY
+# For GMGN discovery: add GMGN_API_KEYS (comma-separated)
+
+# 3. (Optional) Copy config templates
+cp live-config.example.json live-config.json
+cp paper-config.example.json paper-config.json
+# The bot auto-creates these with defaults if skipped
+
+# 4. Run (paper mode first — ALWAYS paper test before live!)
+npm run dev          # Standalone mode, paper trading
+# or
+npm run skill-dev    # Skill mode, paper trading
+```
+
+### Minimum .env
+
+| Variable | Required For | Description |
+|----------|-------------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Both modes | Telegram bot token from @BotFather |
+| `TELEGRAM_CHAT_ID` | Both modes | Your chat ID (from @userinfobot) |
+| `SOLANA_PRIVATE_KEY` | Live mode only | Base58 private key for swaps |
+| `SOLANA_RPC_URL` | Live mode only | Dedicated RPC endpoint recommended |
+| `OPENROUTER_API_KEY` | Standalone LLM | OpenRouter API key |
+| `DEEPSEEK_API_KEY` | Standalone LLM | DeepSeek API key (alternative) |
+| `GMGN_API_KEYS` | GMGN discovery | Comma-separated API keys for token discovery |
+| `GMGN_API_KEY` | GMGN wallet tracking | Single API key for wallet activity/stats |
+
+### npm Scripts
+
+| Script | Mode | Description |
+|--------|------|-------------|
+| `npm run dev` | Standalone | Paper trading, DRY_RUN=1 forced |
+| `npm start` | Standalone | Live trading (or paper if SNIPRA_MODE=paper) |
+| `npm run screen` | Standalone | Screen once, print candidates, exit |
+| `npm run skill-dev` | Skill | Paper trading via stdin/stdout protocol |
+| `npm run skill` | Skill | Live trading via stdin/stdout protocol |
+| `npm run setup` | Setup | Install SKILL.md to detected platforms |
+| `npm test` | Dev | Run 43 tests |
+
+## Strategy Presets
+
+Four hardcoded filter profiles for different trading styles. Set via `strategy` in `live-config.json` or `/set strategy <name>`.
+
+| Preset | Style | Key Traits |
+|--------|-------|------------|
+| `myself` | Full manual | Use config values as-is, no overrides |
+| `sniper` | Ultra-fast | Low MC (7K-200K), max age 60min, loose risk |
+| `wait_for_dip` | Patient | Mid MC (25K-500K), max age 24h, moderate risk |
+| `smart_money` | Conservative | Higher holders (1K+), tight top-10 cap (50%), strict risk |
+| `degen` | Maximum risk | Lowest MC (5K-100K), max age 60min, loose everything |
+
+**Strategy presets ONLY override `screener.filters.*`** — all management settings (TP, SL, trailing, position size, LLM config, max positions, max hold) stay in your config file and are never touched.
 
 ## Configuration
 
-All settings live in two **local, git-ignored** JSON files at the project root — they hold your personal strategy tuning and are never committed:
+All settings live in two **local, git-ignored** JSON files at the project root:
 
-- **`live-config.json`** — single source of truth for everything (screener, trading, llm, trailing, darwin, telegram, etc).
-- **`paper-config.json`** — overrides only a few paper-mode-specific fields on top of `live-config.json` (`paper.startBalance`, `trading.maxPositions`, `trading.buyAmount`, `trading.paperGas`). Every other setting always follows `live-config.json`, even in paper mode.
+- **`live-config.json`** — single source of truth for everything (strategy, screener, trading, llm, trailing, darwin, telegram, monitor).
+- **`paper-config.json`** — overrides only paper-specific fields on top of `live-config.json` (`paper.startBalance`, `trading.maxPositions`, `trading.buyAmount`, `trading.paperGas`). Every other setting always follows `live-config.json`.
 
-Templates with inline documentation for every field ship in the repo:
-
-```bash
-cp live-config.example.json live-config.json
-cp paper-config.example.json paper-config.json
-```
-
-Strip the `//` comment lines from your copies (the templates use them for documentation, but plain JSON doesn't support comments). If you skip this step entirely, the bot auto-creates both files with sane defaults on first run.
-
-Edit values directly in the file, or change them at runtime via Telegram `/set` (persists straight back to the same file). Any field missing from the file falls back to the built-in default in `src/config.js`.
-
-## Setup
+Templates with inline documentation ship in the repo:
 
 ```bash
-npm install
-cp .env.example .env                        # fill in your keys
-cp live-config.example.json live-config.json    # optional — bot creates defaults if skipped
-cp paper-config.example.json paper-config.json  # optional
-npm run dev                                  # DRY RUN (default, safe)
+cp live-config.example.json live-config.json    # full template
+cp paper-config.example.json paper-config.json  # paper override template
 ```
 
-Minimum required in `.env`:
-- `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` — create a bot via @BotFather
-- `SOLANA_PRIVATE_KEY` — only needed for live mode
-- `OPENROUTER_API_KEY` or `DEEPSEEK_API_KEY` — only if `llm.enabled=true`
+**Strip the `//` comment lines** from your copies (JSON doesn't support comments; the templates use them for documentation only). The bot auto-creates both files with defaults on first run if you skip this step.
 
-Try screening without running the full bot:
+Edit values directly in the file, or change at runtime via Telegram `/set <path> <value>` (persists straight back to the file). Hot-reload: the bot watches both files and picks up changes without restart. Timer changes (screening interval, monitor interval) auto-restart their respective loops.
 
-```bash
-npm run screen
-```
+### Key Config Sections
 
-## Skill mode
+| Path | Default | Description |
+|------|---------|-------------|
+| `strategy` | `"myself"` | Strategy preset for filter overrides |
+| `screener.source` | `"gmgn"` | Discovery source: `gmgn` or `dexscreener` |
+| `screener.section` | `"new_creation"` | GMGN trench section |
+| `screener.maxCandidatesPerCycle` | `3` | Max new tokens evaluated per cycle |
+| `trading.buyAmount` | `0.3` | Position size in SOL |
+| `trading.stopLossPct` | `-35` | Static stop-loss percentage |
+| `trading.maxPositions` | `20` | Max concurrent open positions |
+| `trading.maxHoldMinutes` | `0` | Force-close after N minutes (0=off) |
+| `trading.cooldownMinutes` | `240` | Don't re-buy same token within window |
+| `trailing.enabled` | `true` | Trailing stop active |
+| `trailing.activateGainPct` | `10` | Trailing activates after this % profit |
+| `trailing.trailPct` | `5` | Close when drops this % from peak |
+| `darwin.enabled` | `true` | Genome evolution active |
+| `llm.enabled` | `false` | LLM buy-gate active (needs API key) |
+| `llm.gateBuy` | `true` | LLM evaluates before buy |
+| `llm.tools` | `true` | LLM can call bot tools in chat |
+| `telegram.screeningcyclemin` | `60` | Screening loop interval (minutes) |
+| `telegram.managecyclemin` | `30` | Status report interval (minutes) |
 
-snipra can also run as an installable skill for Claude Code, Codex, OpenCode, OpenClaw, or Hermes Agent — the platform agent becomes the LLM brain (via a stdin/stdout JSON protocol) and the sole interface for status checks and manual actions, instead of `OPENROUTER_API_KEY`/`DEEPSEEK_API_KEY` and Telegram commands.
+## Telegram Commands
 
-```bash
-npm run setup          # detects installed platforms, copies skills/snipra/SKILL.md into each
-npm run skill-dev      # paper mode, skill mode
-npm run skill          # live mode, skill mode (once you trust it)
-```
+### Trading
+| Command | Description |
+|---------|-------------|
+| `/buy <address> [amount]` | Buy a token (chain=Solana, amount from config if omitted) |
+| `/sell <address> [pct]` | Sell a position (default 100%) |
+| `/closeall` | Close all open positions |
+| `/screen` | Run screening cycle + auto-buy candidates |
+| `/pause` | Pause auto-buy (monitoring keeps running) |
+| `/resume` | Resume auto-buy |
 
-In skill mode, Telegram is notification-only (no commands/chat) — talk to the platform agent directly instead. The agent checks status with `node scripts/skill-status.js` and takes action with `node scripts/skill-command.js <tool> '<json_args>'`. Full protocol and interaction details: `skills/snipra/SKILL.md`.
+### Status & Reports
+| Command | Description |
+|---------|-------------|
+| `/status` | Mode, balance, open positions + PnL, moonbags |
+| `/stats` | Win rate, avg PnL, recent trades |
+| `/briefings` | Manual daily briefing (positions, 24h PnL, lessons) |
+| `/logs` | Recent 20 log lines |
 
-## Go live
+### Configuration
+| Command | Description |
+|---------|-------------|
+| `/config` | View full configuration |
+| `/get <path>` | View a single config value |
+| `/set <path> <value>` | Change config (persists to file) |
+| `/menu` | Quick settings button panel |
+| `/mode paper\|live` | Switch trading mode |
 
-```bash
-# 1. Run paper trading first until win rate & PnL look convincing (/papertrades)
-# 2. Switch mode via Telegram:
-#    /mode live
-npm start
-```
+### Darwin & LLM
+| Command | Description |
+|---------|-------------|
+| `/darwin` | Genome evolution status |
+| `/evolve` | Force evolution + LLM analysis |
+| `/lessons` | Recent lessons from LLM |
 
-⚠️ **Start with a small size** (`trading.buyAmount`). Memecoins are highly risky — this bot is not a profit guarantee.
+### Paper Trading
+| Command | Description |
+|---------|-------------|
+| `/papertrades` | Paper trade history from SQLite |
+| `/paperreset` | Reset virtual balance to starting value |
 
-## Telegram commands
+### System
+| Command | Description |
+|---------|-------------|
+| `/help` | Full command list |
+| `/start` | Onboarding message |
+| `/stop` | Shut down the bot |
 
-`/status` `/config` `/get` `/set` `/menu` `/screen` `/buy` `/sell` `/closeall` `/stats` `/papertrades` `/paperreset` `/pause` `/resume` `/mode` `/darwin` `/evolve` `/lessons` `/logs` `/help` `/stop`
-
-`/status` shows mode, balance, and **open positions + moonbag** (on-demand on-chain reconcile before rendering) in a single message.
+### Without Commands
+- **Contract address** → token data card + Buy button
+- **1-2 words** → top 3 DexScreener search results + Buy buttons
+- **Sentence/question** → answered by LLM with realtime bot context
 
 Runtime config examples:
-
 ```
-/set screener.filters.minLiquidityUsd 30000
-/set trailing.trailPct 15
+/set screener.filters.minLiquidity 30000
+/set trading.stopLossPct -25
+/set strategy sniper
 /set tpLadder [{"gainPct":50,"sellPct":30},{"gainPct":150,"sellPct":50}]
 /set llm.enabled true
 ```
 
-## Active chain
+## Skill Mode Protocol
 
-- **Solana** — dexscreenerId `solana`, executor Jupiter (or GMGN).
+In skill mode, the bot communicates via stdin/stdout JSON. The platform agent becomes the LLM brain.
+
+### Startup
+```bash
+npm run skill-dev    # Paper mode
+npm run skill        # Live mode
+```
+The bot prints `{"type":"ready","version":"2.0.0"}` to stdout when ready.
+
+### Request Types
+| Type | Purpose | Response |
+|------|---------|----------|
+| `assess_batch` | Evaluate tokens that passed filters | `{verdicts: [{index, action, confidence, risk, reason}]}` |
+| `record_lesson` | Extract lesson from closed trade | `{lesson: "..."}` |
+| `suggest_genes` | Recommend filter changes | `{genes: {...}, rationale: "..."}` |
+| `derive_lessons` | Batch extract lessons from all trades | `{lessons: [{text, outcome}]}` |
+| `chat` | User message + optional tool calls | `{reply: "..."}` or `{tool_calls: [...]}` |
+
+### Available Tools (Skill Mode)
+| Tool | Args | Description |
+|------|------|-------------|
+| `get_positions` | `{}` | Open positions + PnL + moonbag count |
+| `screen_now` | `{}` | Run one screening cycle |
+| `buy_token` | `{"chain":"solana","address":"...","amount":<optional>}` | Buy a token |
+| `sell_token` | `{"address":"...","pct":<optional>}` | Sell a position |
+| `close_all_positions` | `{}` | Close all positions |
+
+### User Interaction in Skill Mode
+Talk to your agent directly:
+- **Status check**: Agent runs `node scripts/skill-status.js` → relays to you
+- **Actions**: Agent runs `node scripts/skill-command.js <tool> '<args>'` → relays result
+- **Chat**: Agent forwards your message via the `chat` request type
+
+Full protocol details: `skills/snipra/SKILL.md`
 
 ## Architecture
 
 ```
 src/
-  index.js              # standalone entry point: wiring, screening loop, auto-buy, graceful shutdown
-  config.js             # config + persistence + /set path resolution
+  index.js                   # Standalone entry: wiring, loops, graceful shutdown
+  config.js                  # Config layer: DEFAULTS, deep merge, hot-reload, /set persistence
+  strategies.js              # Strategy presets: 4 hardcoded filter profiles + applyStrategy()
   screener/
-    dexscreener.js      # discovery + pair data + batched prices
-    goplus.js           # holders + honeypot + tax (Solana)
-    filters.js          # filter evaluation + scoring
-    preScorer.js        # free rule-based gate before the LLM
-    screener.js         # orchestration (darwin genome + LLM gate + decision cache + pre-scorer)
+    gmgn-discovery.js        # GMGN OpenAPI token discovery (multi-key fallback)
+    dexscreener.js           # DexScreener: discovery, pair data, batched prices, search
+    goplus.js                # GoPlus: security audit (honeypot, freezable, holders, top10)
+    filters.js               # Hard filter evaluation + scoring (all GMGN fields)
+    preScorer.js             # Rule-based scoring gate before LLM (cost reduction)
+    screener.js              # Orchestration: genome selection → discovery → filter → LLM gate
   chains/
-    solana.js           # Jupiter (default) / GMGN executor + quote-based price fallback
-  trade/executor.js     # cross-mode buy/sell interface (paper/live)
-  trade/paper.js        # paper engine: virtual balance, real price fills + slippage
-  trade/helpers.js      # buyToken/sellToken — retry + freshness recheck, shared by every caller
-  trade/circuit-breaker.js  # rate-limits position opens (3/60s trips 5min cooldown)
-  db.js                 # SQLite: trade history, paper wallet & holdings, LLM decision cache
+    solana.js                # Jupiter (default) / GMGN executor, quote-based price fallback
+  trade/
+    executor.js              # Cross-mode buy/sell interface (paper ↔ live)
+    paper.js                 # Paper engine: virtual balance, real prices, simulated fills
+    helpers.js               # buyToken/sellToken: retry + freshness recheck, shared by all callers
+    circuit-breaker.js       # Rate-limits position opens (burst protection)
+  db.js                      # SQLite: trade history, decision cache, paper wallet
   positions/
-    state.js            # position, cooldown & stats persistence
-    manager.js          # monitor loop: time-exit → dynamic/static SL → TP ladder → trailing → on-chain reconcile
-  darwin/darwin.js      # filter + exit-parameter genome evolution
-  darwin/evolve.js      # evolution advisory + trade feedback → LLM suggestion → Telegram notification
+    state.js                 # Position, cooldown & stats persistence (per-mode JSON files)
+    manager.js               # Monitor loop: time-exit → SL → TP ladder → trailing → reconcile
+  darwin/
+    darwin.js                # Genome population: seed, mutate, crossover, evolve, fitness (EMA)
+    evolve.js                # Evolution orchestration: trade feedback → LLM suggestion → notify
   llm/
-    llm.js              # public API: assessBatch, lessons, chat, suggestGenes
-    http-backend.js     # OpenRouter/DeepSeek HTTP calls (standalone mode)
-    stdio-backend.js    # stdin/stdout JSON protocol (skill mode)
-    tools.js            # shared tool defs + executor, used by standalone Telegram chat AND skill mode
-    loops.js            # shared screening-cycle/bot-context logic between index.js and runner.js
-  skills/
-    runner.js           # skill-mode entry point: StdioBackend + command-queue polling
-    command-queue.js    # file-based inbox/outbox the agent uses to run actions
+    llm.js                   # Public API: assessBatch, lessons, chat, suggestGenes, deriveLessons
+    http-backend.js          # OpenRouter/DeepSeek HTTP calls (standalone mode)
+    stdio-backend.js         # stdin/stdout JSON protocol backend (skill mode)
+    tools.js                 # Shared LLM tool defs + executor (both modes)
+    loops.js                 # Shared screening-cycle/bot-context factory (index.js + runner.js)
   telegram/
-    bot.js              # command handler + inline keyboard + token lookup
-    fmt.js              # formatting helpers
-    reports.js          # periodic status report + daily briefing (WIB 08:00)
-    commands/           # 20+ command handlers
-  gmgn/openapi.js       # GMGN OpenAPI (wallet_activity, wallet_stats)
+    bot.js                   # Bot: commands, inline keyboards, token lookup, notifications
+    fmt.js                   # Formatting helpers (nativeSym, marketLine, communityLine, etc.)
+    reports.js               # Periodic status reports + daily briefing (7 AM WIB)
+    commands/                # 20+ exported command handlers (auto-discovered via buildRegistry)
+  gmgn/
+    openapi.js               # GMGN OpenAPI: wallet_activity, wallet_stats
+  skills/
+    runner.js                # Skill-mode entry: StdioBackend + command-queue + Telegram (notify-only)
+    command-queue.js         # File-based inbox/outbox for agent-initiated actions
 scripts/
-  install.js            # platform detector + SKILL.md installer (npm run setup)
-  skill-command.js      # agent-facing CLI: run a bot action, wait for the result
-  skill-status.js       # agent-facing CLI: read-only status snapshot
-skills/snipra/SKILL.md  # skill template: protocol + agent instructions
-live-config.example.json   # documented template → copy to live-config.json (git-ignored)
-paper-config.example.json  # documented template → copy to paper-config.json (git-ignored)
-data/                       # snipra.db (SQLite), positions.*.json, darwin.json, lessons.json, skill-commands/ — all git-ignored
+  install.js                 # Platform detector + SKILL.md installer (npm run setup)
+  skill-command.js           # Agent-facing CLI: submit action, wait for result
+  skill-status.js            # Agent-facing CLI: read-only status snapshot
+skills/snipra/
+  SKILL.md                   # Skill template: protocol spec + agent instructions
+live-config.example.json     # Documented template → copy to live-config.json
+paper-config.example.json    # Documented template → copy to paper-config.json
+data/                        # All runtime data — git-ignored
+  snipra.db                  # SQLite database
+  positions.paper.json       # Paper mode positions + stats
+  positions.live.json        # Live mode positions + stats
+  darwin.json                # Genome population + evolution history
+  lessons.json               # LLM-extracted trading lessons
+  .mode                      # Active mode marker (paper or live)
 ```
 
-## API sources (official docs)
+## API Sources
 
-- DexScreener: `https://docs.dexscreener.com/api/reference`
-- Jupiter Swap: `https://developers.jup.ag` (free lite-api: `lite-api.jup.ag/swap/v1`)
-- GMGN Cooperation API: `https://docs.gmgn.ai` (requires approval, `x-route-key` header)
-- GoPlus Security: `https://api.gopluslabs.io`
+| Service | Endpoint | Usage |
+|---------|----------|-------|
+| DexScreener | `api.dexscreener.com` | Token discovery, pair data, batched prices, search |
+| Jupiter | `lite-api.jup.ag/swap/v1` | Swap execution (free tier) |
+| GMGN | `gmgn.ai` | Token discovery (trenches API) + trading API |
+| GoPlus | `api.gopluslabs.io` | Security audit (honeypot, holders, tax) |
+| OpenRouter | `openrouter.ai/api/v1` | LLM provider (standalone mode) |
+| DeepSeek | `api.deepseek.com` | LLM provider (standalone mode) |
+
+## Go Live Checklist
+
+1. ✅ Paper trade for at least several days — review `/papertrades` and `/stats`
+2. ✅ Verify win rate and avg PnL are acceptable
+3. ✅ Start with small `trading.buyAmount` (e.g. 0.05 SOL)
+4. ✅ Ensure dedicated RPC endpoint (not public default)
+5. ✅ Double-check `SOLANA_PRIVATE_KEY` is correct
+6. ✅ Switch mode: `/mode live`
+7. ✅ Monitor first few trades closely
+
+⚠️ **Memecoins are highly risky.** This bot is a tool, not a profit guarantee. Never trade more than you can afford to lose.

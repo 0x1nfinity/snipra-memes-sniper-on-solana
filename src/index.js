@@ -14,7 +14,7 @@ import { fmtUsd, fmtPct } from './utils.js';
 import { createLogger } from './logger.js';
 import { buyToken, sellToken } from './trade/helpers.js';
 import { runEvolve, onTradeClosed, setEvolveDeps } from './darwin/evolve.js';
-import { startStatusLoop, stopStatusLoop, setStatusDeps } from './telegram/reports.js';
+import { startStatusLoop, stopStatusLoop, setStatusDeps, sendDailyBriefing } from './telegram/reports.js';
 import { createScreeningCycle, startScreeningLoop as startScreeningTimer, createBotContext } from './llm/loops.js';
 import { LLM_TOOL_DEFS, createToolRunner } from './llm/tools.js';
 
@@ -74,6 +74,7 @@ const telegram = new Telegram({
     getConfig().llm.tools ? { defs: LLM_TOOL_DEFS, run: runLlmTool } : null
   ),
   closeAll: (reason) => positionManager.closeAllPositions(reason),
+  sendDailyBriefing: () => sendDailyBriefing(),
   // terapkan pergantian mode (executor + reload state per-mode) dari /mode & /set mode
   applyMode,
   // restart timer setelah interval diubah via /set (tanpa perlu restart bot)

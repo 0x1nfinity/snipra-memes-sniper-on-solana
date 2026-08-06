@@ -29,6 +29,9 @@ const HELP = `*snipra v2 — multi-chain meme sniper*
 /mode paper|live — papertest vs real on-chain
 /stop — shut down the bot
 
+*Reports*
+/briefings — daily briefing (positions, PnL, lessons)
+
 *Configuration*
 /config — view full config
 /get <path> — view a single value
@@ -38,7 +41,7 @@ const HELP = `*snipra v2 — multi-chain meme sniper*
 
 *Trading*
 /screen — screen now + immediately buy candidates that pass
-/buy <chain> <address> [amount] — manual buy
+/buy <address> [amount] — manual buy (chain=Solana)
 /sell <address> [pct] — sell a position (default 100%)
 /closeall — close all open positions
 /stats — trading stats
@@ -103,4 +106,9 @@ export async function paperreset(args, msg, deps) {
     `📊 Realized PnL → *0* · ${tradesDeleted} paper trades deleted` +
     (extra.length ? `\n_(${extra.join(', ')})_` : '')
   );
+}
+
+export async function briefings(args, msg, deps) {
+  await deps.send('📊 Generating daily briefing…');
+  return deps.sendDailyBriefing();
 }
