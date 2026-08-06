@@ -107,23 +107,23 @@ export class SolanaChain {
   }
 
   /**
-   * Jupiter swap dengan 3-tier fallback:
-   *   1. V2 + platform fee  (primary — handles Token-2022 dgn fee, seperti old-snipra)
-   *   2. no V2 + fee        (fallback 6014 — Token-2022 mungkin reject tanpa V2)
-   *   3. no V2 + no fee     (last resort — pre-upgrade behaviour, selalu works)
+   * Jupiter swap dengan 4-tier fallback — platform fee DIUTAMAKAN:
+   *   1. V2 + fee + restricted   (primary — rute paling efisien, seperti old-snipra)
+   *   2. V2 + fee + unrestricted (fallback 6025 — rute lebih luas, lebih banyak DEX)
+   *   3. noV2 + fee + unrestricted (fallback 6014 — coba tanpa V2, rute luas)
+   *   4. noV2 + noFee + unrestricted (LAST RESORT — TANPA platform fee, log keras)
    *
    * excludeDexes TIDAK dipakai — old-snipra tidak pakai dan swap-nya lancar.
-   * excludeDexes 'Pump.fun Amm' memaksa Jupiter route lewat DEX lain (Meteora, etc.)
-   * yg justru gagal dgn V2 + Token-2022 = error 0x1789 / 6025.
    */
   async _jupiterSwap(inputMint, outputMint, rawAmount, slippageBps) {
     const base = this._jupBase();
 
-    // 3-tier: V2+fee → noV2+fee → noV2+noFee
+    // 4-tier: fee di 3 tier pertama, no-fee hanya last resort
     const tiers = [
-      { v2: true,  fee: true,  label: 'V2+fee' },
-      { v2: false, fee: true,  label: 'noV2+fee' },
-      { v2: false, fee: false, label: 'noV2+noFee' },
+      { v2: true,  fee: true,  restricted: true,  label: 'V2+fee+restricted' },
+      { v2: true,  fee: true,  restricted: false, label: 'V2+fee+unrestricted' },
+      { v2: false, fee: true,  restricted: false, label: 'noV2+fee+unrestricted' },
+      { v2: false, fee: false, restricted: false, label: 'noV2+noFee' },
     ];
 
     let lastErr;
@@ -133,8 +133,8 @@ export class SolanaChain {
         outputMint,
         amount: rawAmount.toString(),
         slippageBps: String(slippageBps),
-        restrictIntermediateTokens: 'true',
       });
+      if (tier.restricted) q.set('restrictIntermediateTokens', 'true');
       if (tier.fee) q.set('platformFeeBps', String(JUP_PLATFORM_FEE_BPS));
       if (tier.v2) q.set('instructionVersion', 'V2');
 
@@ -180,7 +180,7 @@ export class SolanaChain {
           maxRetries: 3,
         });
       } catch (e) {
-        // Transaction too large — try next tier (especially no-fee saves ~32 bytes)
+        // Transaction too large — try next tier
         if (e.message?.includes('too large') && tier !== tiers[tiers.length - 1]) {
           log.warn(`tier ${tier.label} tx too large, trying next tier`);
           continue;
@@ -198,13 +198,13 @@ export class SolanaChain {
           lastErr = new Error(`tx ${txid} not confirmed within timeout`);
           continue;
         }
-        if (tier.label !== 'V2+fee') {
+        if (tier.label !== 'V2+fee+restricted') {
           log.info(`swap succeeded at tier ${tier.label} (tx ${txid.slice(0, 8)})`);
         }
         return { txid, outAmountRaw: BigInt(quote.outAmount), quote };
       } catch (e) {
         if (e.onChainFailure) {
-          // 6025 = V2 rejected by Token-2022 route, 6014 = IncorrectTokenProgramID tanpa V2
+          // 6025 = V2 ditolak rute, 6014 = Token-2022 butuh V2 utk fee
           const errStr = e.message;
           const code = errStr.includes('6025') ? '6025' : errStr.includes('6014') ? '6014' : null;
           if (code && tier !== tiers[tiers.length - 1]) {
