@@ -36,11 +36,8 @@ export function evaluate(c, f) {
       fail(`age ${(c.ageMinutes / 60).toFixed(1)}h > ${f.maxAgeMinutes / 60}h`);
   }
 
-  // Holders
-  if (c.holders == null) {
-    if (f.minHolders != null || f.maxHolders != null)
-      fail('holders unknown');
-  } else {
+  // Holders — only check when data is available
+  if (c.holders != null) {
     if (f.minHolders != null && c.holders < f.minHolders)
       fail(`holders ${c.holders} < ${f.minHolders}`);
     if (f.maxHolders != null && c.holders > f.maxHolders)
@@ -53,31 +50,32 @@ export function evaluate(c, f) {
   if (f.maxSwaps24h != null && (c.traders24h ?? 0) > f.maxSwaps24h)
     fail(`swaps24h ${c.traders24h} > ${f.maxSwaps24h}`);
 
-  // Bonding progress
-  if (f.minProgress != null && (c.bondingProgress ?? 0) < f.minProgress)
-    fail(`progress ${(c.bondingProgress ?? 0).toFixed(3)} < ${f.minProgress}`);
-  if (f.maxProgress != null && (c.bondingProgress ?? 0) > f.maxProgress)
-    fail(`progress ${(c.bondingProgress ?? 0).toFixed(3)} > ${f.maxProgress}`);
+  // Bonding progress — only check when data is available (GMGN-only field)
+  if (c.bondingProgress != null) {
+    if (f.minProgress != null && c.bondingProgress < f.minProgress)
+      fail(`progress ${c.bondingProgress.toFixed(0)}% < ${f.minProgress}%`);
+    if (f.maxProgress != null && c.bondingProgress > f.maxProgress)
+      fail(`progress ${c.bondingProgress.toFixed(0)}% > ${f.maxProgress}%`);
+  }
 
-  // GMGN-specific risk filters — untuk kandidat dari DexScreener (field null),
-  // gunakan nilai konservatif agar tidak silently pass begitu saja.
-  // Nilai ini cukup tinggi untuk menangkap scam jelas tapi tidak memblokir
-  // semua token non-GMGN.
-  const _r = (v, fallback) => (v != null ? v : fallback);
-  if (f.maxRugRatio != null && _r(c.rugRatio, 0.5) > f.maxRugRatio)
-    fail(`rugRatio ${_r(c.rugRatio, 0.5).toFixed(2)} > ${f.maxRugRatio}`);
-  if (f.maxBundlerRate != null && _r(c.bundlerRate, 0.5) > f.maxBundlerRate)
-    fail(`bundlerRate ${_r(c.bundlerRate, 0.5).toFixed(2)} > ${f.maxBundlerRate}`);
-  if (f.maxInsiderRate != null && _r(c.insiderRate, 0.5) > f.maxInsiderRate)
-    fail(`insiderRate ${_r(c.insiderRate, 0.5).toFixed(2)} > ${f.maxInsiderRate}`);
-  if (f.maxTop10HolderRate != null && _r(c.top10HolderRate, 80) > f.maxTop10HolderRate)
-    fail(`top10 ${_r(c.top10HolderRate, 80).toFixed(0)}% > ${f.maxTop10HolderRate}%`);
-  if (f.maxDevHoldRate != null && _r(c.devHoldRate, 0.5) > f.maxDevHoldRate)
-    fail(`devHold ${(_r(c.devHoldRate, 0.5) * 100).toFixed(1)}% > ${f.maxDevHoldRate * 100}%`);
-  if (f.maxBotDegenRate != null && _r(c.botDegenRate, 0.5) > f.maxBotDegenRate)
-    fail(`botDegenRate ${_r(c.botDegenRate, 0.5).toFixed(2)} > ${f.maxBotDegenRate}`);
-  if (f.maxFreshWalletRate != null && _r(c.freshWalletRate, 0.5) > f.maxFreshWalletRate)
-    fail(`freshWallet ${_r(c.freshWalletRate, 0.5).toFixed(2)} > ${f.maxFreshWalletRate}`);
+  // GMGN-specific risk filters — these fields only exist when data comes from
+  // GMGN (DexScreener tokens have null for all of them). Skip the check when
+  // data is unavailable rather than using conservative fallbacks that silently
+  // reject every DexScreener candidate.
+  if (f.maxRugRatio != null && c.rugRatio != null && c.rugRatio > f.maxRugRatio)
+    fail(`rugRatio ${c.rugRatio.toFixed(2)} > ${f.maxRugRatio}`);
+  if (f.maxBundlerRate != null && c.bundlerRate != null && c.bundlerRate > f.maxBundlerRate)
+    fail(`bundlerRate ${c.bundlerRate.toFixed(2)} > ${f.maxBundlerRate}`);
+  if (f.maxInsiderRate != null && c.insiderRate != null && c.insiderRate > f.maxInsiderRate)
+    fail(`insiderRate ${c.insiderRate.toFixed(2)} > ${f.maxInsiderRate}`);
+  if (f.maxTop10HolderRate != null && c.top10HolderRate != null && c.top10HolderRate > f.maxTop10HolderRate)
+    fail(`top10 ${c.top10HolderRate.toFixed(0)}% > ${f.maxTop10HolderRate}%`);
+  if (f.maxDevHoldRate != null && c.devHoldRate != null && c.devHoldRate > f.maxDevHoldRate)
+    fail(`devHold ${(c.devHoldRate * 100).toFixed(1)}% > ${f.maxDevHoldRate * 100}%`);
+  if (f.maxBotDegenRate != null && c.botDegenRate != null && c.botDegenRate > f.maxBotDegenRate)
+    fail(`botDegenRate ${c.botDegenRate.toFixed(2)} > ${f.maxBotDegenRate}`);
+  if (f.maxFreshWalletRate != null && c.freshWalletRate != null && c.freshWalletRate > f.maxFreshWalletRate)
+    fail(`freshWallet ${c.freshWalletRate.toFixed(2)} > ${f.maxFreshWalletRate}`);
 
   // Smart degen count
   if (f.minSmartDegenCount != null && c.smartDegenCount != null && c.smartDegenCount < f.minSmartDegenCount)
