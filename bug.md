@@ -313,33 +313,33 @@ Historical best genome may not be optimal if market regime shifts. Epsilon-greed
 ### B35 🟠 [TELEGRAM] Authorization race condition: auto-pair with first sender
 **File:** `src/telegram/bot.js:98-106`
 
-When `TELEGRAM_CHAT_ID` is not set, `_authorized` auto-pairs with whoever messages first. If deployed before setting the env var, an attacker could claim the bot.
+When `TELEGRAM_CHAT_ID` is not set, `_authorized` auto-paired with whoever messaged first. If deployed before setting the env var, an attacker could claim the bot.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — rejects all commands when TELEGRAM_CHAT_ID is not set (no auto-pair)
 **Found by:** Audit (agent telegram)
 
 ### B36 🟡 [TELEGRAM] Markdown fallback skips remaining chunks on failure
 **File:** `src/telegram/bot.js:117-125`
 
-When Markdown parsing fails for a chunk, it sends that chunk as plain text then `continue`s. The next chunk tries Markdown again (which likely also fails). Should set a flag to send all remaining chunks as plain text.
+When Markdown parsing failed for a chunk, it sent that chunk as plain text then `continue`d. The next chunk tried Markdown again (which likely also fails). Should set a flag to send all remaining chunks as plain text.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — markdownFailed flag set on first parse error, all remaining chunks sent as plain text
 **Found by:** Audit (agent telegram)
 
 ### B37 🟡 [TELEGRAM] Hardcoded SOL native currency throughout
 **Files:** `fmt.js`, `reports.js`, `commands/status.js`, `commands/system.js`
 
-`nativeSym()` ignores its `chainKey` parameter and always returns `'SOL'`. All balance displays show SOL regardless of chain.
+`nativeSym()` ignored its `chainKey` parameter and always returned `'SOL'`. All balance displays showed SOL regardless of chain.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — nativeSym reads nativeSymbol from chain config, CHAIN_FIXED now has nativeSymbol field
 **Found by:** Audit (agent telegram)
 
 ### B38 🟡 [TELEGRAM] /start shows full help text, no onboarding flow
 **File:** `src/telegram/commands/system.js:47`
 
-First-time users get a wall of 40+ lines of commands instead of guided setup.
+First-time users got a wall of 40+ lines of commands instead of guided setup.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — /start shows short 3-step onboarding; /help still shows full command list
 **Found by:** Audit (agent telegram)
 
 ---
@@ -385,9 +385,9 @@ Two nearly identical catch blocks in `loadConfig()`. The second has broken inden
 ### B43 🟡 [CONFIG] setPath has no write-lock
 **File:** `src/config.js:347-361`
 
-`setPath` does read-merge-write. Two concurrent `/set` commands could race (though Node.js single-threading makes this unlikely for synchronous I/O).
+`setPath` did read-merge-write without serialization. Two concurrent `/set` commands could race (though Node.js single-threading made this unlikely for synchronous I/O).
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — promise-chain write lock serializes all setPath calls; caller updated to await
 **Found by:** Audit (agent core)
 
 ---

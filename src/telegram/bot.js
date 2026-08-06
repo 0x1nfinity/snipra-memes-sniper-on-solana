@@ -96,12 +96,10 @@ export class Telegram {
   }
 
   _authorized(msg) {
-    if (!this.chatId) {
-      // Belum diset: terima chat pertama sebagai owner, kasih tahu ID-nya
-      this.chatId = String(msg.chat.id);
-      this._send(`Chat ID kamu: \`${msg.chat.id}\`\nSet TELEGRAM_CHAT_ID di .env agar permanen.`);
-      return true;
-    }
+    // Require TELEGRAM_CHAT_ID to be explicitly set in .env.
+    // Auto-pairing with the first sender is a security risk: an attacker
+    // who messages before the owner claims the bot permanently.
+    if (!this.chatId) return false;
     return String(msg.chat.id) === String(this.chatId);
   }
 
@@ -109,13 +107,24 @@ export class Telegram {
     if (!this.bot || !this.chatId) return;
     // link gmgn tanpa preview + Telegram limit 4096 char — pecah per chunk
     const opts = { parse_mode: 'Markdown', disable_web_page_preview: true, ...extra };
+    let markdownFailed = false;
     for (let i = 0; i < text.length; i += 3800) {
       const chunk = text.slice(i, i + 3800);
+      if (markdownFailed) {
+        // First chunk parse failure — all remaining chunks go as plain text
+        try {
+          await this.bot.sendMessage(this.chatId, chunk, { disable_web_page_preview: true });
+        } catch {
+          log.warn(`telegram send failed (plain-text fallback also failed)`);
+        }
+        continue;
+      }
       try {
         await this.bot.sendMessage(this.chatId, chunk, opts);
       } catch (e) {
         if (/parse/i.test(e.message)) {
-          // fallback tanpa markdown kalau parsing gagal
+          // Markdown parse failed — set flag, send this chunk + all remaining as plain text
+          markdownFailed = true;
           try {
             await this.bot.sendMessage(this.chatId, chunk, { disable_web_page_preview: true });
           } catch (e2) {

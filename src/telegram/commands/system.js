@@ -3,6 +3,22 @@ import { fmtPct } from '../../utils.js';
 import { nativeSym } from '../fmt.js';
 import { recentLogs } from '../../logger.js';
 
+const START = `🚀 *snipra v2 — Solana meme sniper*
+
+Selamat datang! Bot sudah *langsung berjalan* — screening otomatis tiap interval.
+
+*3 langkah awal:*
+1. Cek status: /status
+2. Lihat konfigurasi: /config
+3. Ganti mode: /mode paper (simulasi) atau /mode live (on-chain real)
+
+*Cek setelan penting:*
+/set — ubah parameter (buy amount, filter, TP/SL)
+/screen — pindai token sekarang + langsung beli yang lolos filter
+/buy — beli token manual
+
+Butuh daftar lengkap? /help`;
+
 const HELP = `*snipra v2 — multi-chain meme sniper*
 
 *Controls*
@@ -40,11 +56,13 @@ const HELP = `*snipra v2 — multi-chain meme sniper*
 • send a *token name* (1-2 words) → top 3 results + Buy button
 • send a *sentence/question* → answered by the LLM with the bot's realtime data`;
 
+export async function start(args, msg, deps) {
+  return deps.send(START);
+}
+
 export async function help(args, msg, deps) {
   return deps.send(HELP);
 }
-
-export { help as start };
 
 export async function logs(args, msg, deps) {
   return deps.send('```\n' + recentLogs(20).join('\n').slice(-3700) + '\n```');

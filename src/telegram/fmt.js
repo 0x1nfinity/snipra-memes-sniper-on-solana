@@ -1,9 +1,15 @@
+import { getConfig } from '../config.js';
 import { fmtUsd, fmtPct } from '../utils.js';
 
 // ===== helper kosmetik bersama untuk semua pesan Telegram =====
 
-/** simbol native chain: SOL */
-export function nativeSym() {
+/** simbol native chain dari config, fallback ke SOL */
+export function nativeSym(chainKey) {
+  if (chainKey) {
+    const cfg = getConfig();
+    const sym = cfg.chains[chainKey]?.nativeSymbol;
+    if (sym) return sym;
+  }
   return 'SOL';
 }
 

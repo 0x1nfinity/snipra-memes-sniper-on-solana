@@ -110,7 +110,7 @@ export async function set(args, msg, deps) {
     deps.applyMode();
     return deps.send(`✅ Mode → \`${m}\``);
   }
-  const value = setPath(path, args.slice(1).join(' '));
+  const value = await setPath(path, args.slice(1).join(' '));
   // interval screening/monitor/laporan langsung diterapkan tanpa restart bot
   if (['telegram.screeningcyclemin', 'monitor.intervalSec', 'telegram.managecyclemin'].includes(path)) {
     deps.restartLoops();

@@ -48,6 +48,7 @@ const CHAIN_FIXED = {
   solana: {
     enabled: true,
     type: 'solana',
+    nativeSymbol: 'SOL',
     dexscreenerId: 'solana',
     gmgnSlug: 'sol', // slug URL gmgn.ai/<slug>/token/<address>
     executor: 'jupiter', // 'jupiter' | 'gmgn'
@@ -471,27 +472,37 @@ export function getPath(pathStr) {
 }
 
 /** set nilai via path "a.b.c" dengan koersi tipe; return nilai baru */
+// Simple serial write lock — prevents interleaved read-merge-write from
+// concurrent /set commands or menu callbacks. Node.js is single-threaded
+// for synchronous code so risk is very low; this is defense-in-depth.
+let _writeLock = Promise.resolve();
+
 export function setPath(pathStr, rawValue) {
-  let value = rawValue;
-  if (typeof rawValue === 'string') {
-    const s = rawValue.trim();
-    if (s === 'true') value = true;
-    else if (s === 'false') value = false;
-    else if (s !== '' && !isNaN(Number(s))) value = Number(s);
-    else if ((s.startsWith('[') || s.startsWith('{')) ) {
-      try { value = JSON.parse(s); } catch { value = s; }
+  const done = _writeLock.then(() => {
+    let value = rawValue;
+    if (typeof rawValue === 'string') {
+      const s = rawValue.trim();
+      if (s === 'true') value = true;
+      else if (s === 'false') value = false;
+      else if (s !== '' && !isNaN(Number(s))) value = Number(s);
+      else if ((s.startsWith('[') || s.startsWith('{')) ) {
+        try { value = JSON.parse(s); } catch { value = s; }
+      }
     }
-  }
-  writePathToFile(targetFileForPath(pathStr), pathStr, value);
-  // Rebuild dari file (bukan cuma tempel ke in-memory) — perlu supaya field turunan
-  // seperti chains.solana.buyAmount (disintesis dari trading.buyAmount) ikut sinkron.
-  config = buildConfig(activeMode);
-  // Notifikasi subsistem yang bergantung pada config (executor rebuild, timer restart).
-  // Tanpa ini, perubahan via /set atau menu callback tidak akan diterapkan karena
-  // reloadConfig() deteksi "no change" (memori sudah sama dengan file di disk).
-  if (configChangeCallback) {
-    const timersChanged = TIMER_PATHS.includes(pathStr);
-    configChangeCallback({ changed: true, timersChanged });
-  }
-  return value;
+    writePathToFile(targetFileForPath(pathStr), pathStr, value);
+    // Rebuild dari file (bukan cuma tempel ke in-memory) — perlu supaya field turunan
+    // seperti chains.solana.buyAmount (disintesis dari trading.buyAmount) ikut sinkron.
+    config = buildConfig(activeMode);
+    // Notifikasi subsistem yang bergantung pada config (executor rebuild, timer restart).
+    // Tanpa ini, perubahan via /set atau menu callback tidak akan diterapkan karena
+    // reloadConfig() deteksi "no change" (memori sudah sama dengan file di disk).
+    if (configChangeCallback) {
+      const timersChanged = TIMER_PATHS.includes(pathStr);
+      configChangeCallback({ changed: true, timersChanged });
+    }
+    return value;
+  });
+  // Catch and rethrow so the lock chain doesn't break on an error
+  _writeLock = done.catch(() => {});
+  return done;
 }
