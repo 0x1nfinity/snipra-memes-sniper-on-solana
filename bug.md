@@ -53,7 +53,7 @@ These files were committed on a DIFFERENT branch (skill-agent-control plan Tasks
 
 **Impact:** Agent-facing command CLI is completely broken. Any agent following the SKILL.md instructions to use `node scripts/skill-command.js` or `node scripts/skill-status.js` gets a file-not-found error.
 
-**Status:** ✅Fixed
+**Status:** ✅Fixed — Merged skill-agent-control branch to main; all 6 files now exist
 **Found by:** Audit
 
 ### B7 🟠 [CONFIG] README.md references non-existent files

@@ -143,8 +143,8 @@ src/
     tools.js            # shared tool defs + executor, used by standalone Telegram chat AND skill mode
     loops.js            # shared screening-cycle/bot-context logic between index.js and runner.js
   skills/
-    runner.js           # skill-mode entry point: StdioBackend (command-queue polling planned)
-    command-queue.js    # [TODO] file-based inbox/outbox the agent uses to run actions
+    runner.js           # skill-mode entry point: StdioBackend + command-queue polling
+    command-queue.js    # file-based inbox/outbox the agent uses to run actions
   telegram/
     bot.js              # command handler + inline keyboard + token lookup
     fmt.js              # formatting helpers
@@ -153,8 +153,8 @@ src/
   gmgn/openapi.js       # GMGN OpenAPI (wallet_activity, wallet_stats)
 scripts/
   install.js            # platform detector + SKILL.md installer (npm run setup)
-  skill-command.js      # [TODO] agent-facing CLI: run a bot action, wait for the result
-  skill-status.js       # [TODO] agent-facing CLI: read-only status snapshot
+  skill-command.js      # agent-facing CLI: run a bot action, wait for the result
+  skill-status.js       # agent-facing CLI: read-only status snapshot
 skills/snipra/SKILL.md  # skill template: protocol + agent instructions
 live-config.example.json   # documented template → copy to live-config.json (git-ignored)
 paper-config.example.json  # documented template → copy to paper-config.json (git-ignored)
