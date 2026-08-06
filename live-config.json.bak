@@ -1,0 +1,100 @@
+{
+  "screener": {
+    "maxCandidatesPerCycle": 30,
+    "sources": {
+      "tokenProfiles": true,
+      "boostsLatest": true,
+      "boostsTop": true
+    },
+    "filters": {
+      "minVolume24hUsd": 50000,
+      "minAgeHours": 1,
+      "maxAgeHours": 96,
+      "minLiquidityUsd": 20000,
+      "minMarketCapUsd": 30000,
+      "maxMarketCapUsd": 20000000,
+      "minHolders": 200,
+      "minTraders24h": 300,
+      "minBuySellRatio": 0.9,
+      "maxPriceDropH1Pct": 25,
+      "minVolLiqRatio": 0.5,
+      "requireSocials": false,
+      "blockHoneypot": true,
+      "maxTop10Pct": 55,
+      "strictSecurity": false
+    },
+    "entryGuard": {
+      "enabled": true,
+      "athPullbackPct": 30,
+      "maxGainH1Pct": 150,
+      "maxGainH24Pct": 400,
+      "runThresholdPct": 200
+    },
+    "preScoreEnabled": true
+  },
+  "trading": {
+    "buyAmount": 0.03,
+    "slippageBps": 300,
+    "maxPositions": 20,
+    "minSwapUsd": 1,
+    "cooldownMinutes": 240,
+    "maxTradesBeforeCooldown": 5,
+    "stopLossPct": -40,
+    "slFlashDropPct": 40,
+    "priceMinLiquidityUsd": 300,
+    "priceAnomalySpikePct": 500
+  },
+  "tpLadder": [
+    {
+      "gainPct": 40,
+      "sellPct": 30
+    },
+    {
+      "gainPct": 100,
+      "sellPct": 40
+    },
+    {
+      "gainPct": 250,
+      "sellPct": 50
+    }
+  ],
+  "trailing": {
+    "enabled": true,
+    "activateGainPct": 10,
+    "trailPct": 5,
+    "moonbagPct": 10
+  },
+  "monitor": {
+    "intervalSec": 20,
+    "stalePriceWarnSec": 600,
+    "onchainReconcileSec": 60
+  },
+  "darwin": {
+    "enabled": true,
+    "populationSize": 8,
+    "evolveEveryNTrades": 20,
+    "mutationRate": 0.35,
+    "exploreRate": 0.25,
+    "minTradesForFitness": 3
+  },
+  "llm": {
+    "enabled": false,
+    "provider": "openrouter",
+    "model": "deepseek/deepseek-chat-v3-0324",
+    "gateBuy": true,
+    "minConfidence": 0.35,
+    "failOpen": true,
+    "maxLessons": 12,
+    "decisionCacheEnabled": true,
+    "decisionCacheSkipTtlMin": 30,
+    "batchSize": 5,
+    "cheapModel": "",
+    "tools": true
+  },
+  "telegram": {
+    "notifyScreening": true,
+    "notifyPriceMoves": false,
+    "screeningcyclemin": 60,
+    "managecyclemin": 30
+  }
+}

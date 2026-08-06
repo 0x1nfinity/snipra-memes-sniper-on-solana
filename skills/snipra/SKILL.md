@@ -50,7 +50,7 @@ The runner sends JSON requests to stdout, one per line. You (the agent) respond 
 ```json
 {
   "id": "string",
-  "type": "assess_batch | record_lesson | suggest_genes | derive_lessons | chat",
+  "type": "assess_token | assess_batch | record_lesson | suggest_genes | derive_lessons | chat",
   "system": "system prompt describing your role and task",
   "user": "the data or question to evaluate",
   "response_format": { ... description of expected output ... }
@@ -132,22 +132,50 @@ Or with tool calls:
 
 ---
 
+## Shutdown
+
+When the runner exits, it prints `{"type":"shutdown","reason":"..."}`. Stop reading stdout.
+
+---
+
 ## User Interaction (External Commands)
 
-> ⚠️ These CLI tools are planned but **not yet available** on the main branch.
-> For now, interact with the bot via Telegram (`/status`, `/buy`, `/sell`, etc.)
-> or through the platform agent's stdin/stdout protocol.
+The user talks to you directly — not through this stdout/stdin protocol. You are their single interface to the bot; they never need Telegram (notifications only in skill mode) or any other channel.
 
-<!-- TODO: uncomment when scripts are merged to main
-| Command | Description |
-|---------|-------------|
-| `node scripts/skill-status.js` | Read-only status snapshot |
-| `node scripts/skill-command.js get_positions '{}'` | Open positions + PnL |
-| `node scripts/skill-command.js screen_now '{}'` | Run one screening cycle |
-| `node scripts/skill-command.js buy_token '{"chain":"solana","address":"..."}'` | Buy a token |
-| `node scripts/skill-command.js sell_token '{"address":"...","pct":100}'` | Sell a position |
-| `node scripts/skill-command.js close_all_positions '{}'` | Close everything |
--->
+### Checking status
+
+Run:
+```bash
+node scripts/skill-status.js
+```
+Prints a snapshot: mode, open positions + PnL, recent trades, Darwin genome status, active filters/TP/SL/trailing config. Read-only, safe to run anytime.
+
+### Taking action
+
+Run:
+```bash
+node scripts/skill-command.js <tool_name> '<json_args>'
+```
+
+Available tools:
+
+| Tool | Args | Description |
+|------|------|--------------|
+| `get_positions` | `{}` | Open positions + PnL + moonbag count |
+| `screen_now` | `{}` | Run one screening cycle now, buy whatever passes |
+| `buy_token` | `{"chain":"solana","address":"...","amount":<optional native SOL>}` | Buy a token |
+| `sell_token` | `{"address":"...","pct":<optional 1-100, default 100>}` | Sell a position/moonbag |
+| `close_all_positions` | `{}` | Close every open position now |
+
+The command blocks up to 30s and prints the result as JSON. Two different things can mean "the action didn't do what you wanted" — check both:
+- Top-level `"ok":false` — the command queue itself failed (an unexpected exception, or "no response from snipra after 30s — is it running?" if the runner process isn't up).
+- Top-level `"ok":true` but `"result":{"error":"..."}` — the tool ran fine but rejected the request for a normal reason (e.g. `buy_token` with an unrecognized chain returns `{"error":"unknown chain"}` inside `result`, not a top-level failure). This is the same "return an error object instead of throwing" convention `LLM_TOOL_DEFS`'s tools have always used, not something specific to this CLI.
+
+Relay the outcome to the user in your own words; do not paste raw JSON at them.
+
+Example: user says "beli token ABC di solana" → run
+`node scripts/skill-command.js buy_token '{"chain":"solana","address":"ABC..."}'`
+→ report back what happened.
 
 ---
 

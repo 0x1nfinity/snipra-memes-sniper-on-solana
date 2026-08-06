@@ -15,6 +15,7 @@ import { runEvolve, onTradeClosed, setEvolveDeps } from '../darwin/evolve.js';
 import { startStatusLoop, stopStatusLoop, setStatusDeps } from '../telegram/reports.js';
 import { LLM_TOOL_DEFS, createToolRunner } from '../llm/tools.js';
 import { createLogger } from '../logger.js';
+import { sweepStaleCommandFiles, startCommandQueueLoop } from './command-queue.js';
 
 const log = createLogger('skill-runner');
 
@@ -52,6 +53,9 @@ const runLlmTool = createToolRunner({
   screeningCycle: (force) => screeningCycle(force),
   closeAllPositions: (reason) => positionManager.closeAllPositions(reason),
 });
+
+sweepStaleCommandFiles();
+let _stopCommandQueue = startCommandQueueLoop(runLlmTool);
 
 // Position manager
 const positionManager = new PositionManager({
@@ -113,6 +117,7 @@ async function shutdown(reason) {
   log.info(`shutdown: ${reason}`);
   process.stdout.write(JSON.stringify({ type: 'shutdown', reason }) + '\n');
   if (_stopScreening) _stopScreening();
+  clearInterval(_stopCommandQueue);
   stopStatusLoop();
   positionManager.stop();
   await telegram.stopPolling();
