@@ -87,6 +87,10 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
     trailingActivateGainPct: c.exitGenes?.trailingActivateGainPct ?? null,
     trailingTrailPct: c.exitGenes?.trailingTrailPct ?? null,
   });
+  if (res._pendingConfirm) {
+    pos._confirmPending = true;
+    log.warn(`position opened with pending confirm [${source}]: ${c.symbol} @ ${c.priceUsd} — will reconcile on next tick`);
+  }
   breaker.recordOpen(chainKey);
   log.info(`position opened [${source}]: ${c.symbol} @ ${c.priceUsd}`);
   return { ...pos, txid: res.txid };

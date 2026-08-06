@@ -149,6 +149,13 @@ export class SolanaChain {
       maxRetries: 3,
     });
     const confirmed = await this._confirm(txid);
+    if (confirmed === 'timeout') {
+      // tx sudah broadcast via sendRawTransaction (skipPreflight:true, maxRetries:3).
+      // Mungkin confirm nanti — jangan anggap gagal. Caller akan rekam posisi
+      // dengan flag _confirmPending; reconciliation di tick berikutnya akan deteksi.
+      log.warn(`tx ${txid} broadcast but unconfirmed — proceeding, may confirm later`);
+      return { txid, outAmountRaw: BigInt(quote.outAmount), quote, _pendingConfirm: true };
+    }
     if (!confirmed) throw new Error(`tx ${txid} not confirmed within timeout — treating swap as failed`);
     return { txid, outAmountRaw: BigInt(quote.outAmount), quote };
   }
@@ -184,6 +191,15 @@ export class SolanaChain {
     const txid = sent?.data?.hash;
     if (!txid) throw new Error(`GMGN send failed: ${JSON.stringify(sent).slice(0, 200)}`);
     const confirmed = await this._confirm(txid);
+    if (confirmed === 'timeout') {
+      log.warn(`tx ${txid} broadcast but unconfirmed via GMGN — proceeding, may confirm later`);
+      return {
+        txid,
+        outAmountRaw: BigInt(route?.data?.quote?.outAmount || 0),
+        quote: route.data.quote,
+        _pendingConfirm: true,
+      };
+    }
     if (!confirmed) throw new Error(`tx ${txid} not confirmed within timeout — treating swap as failed`);
     return {
       txid,
@@ -287,6 +303,16 @@ export class SolanaChain {
     return null;
   }
 
+  /**
+   * Poll getSignatureStatuses sampai confirmed/finalized.
+   * Return values:
+   *   true       — confirmed on-chain (success)
+   *   "timeout"  — unconfirmed after all attempts, tapi tx SUDAH broadcast (bisa confirm nanti)
+   *   throw      — on-chain failure (s.err != null)
+   *
+   * Caller TIDAK BOLEH memperlakukan "timeout" sebagai definitive failure —
+   * tx mungkin sudah confirmed di network tapi RPC kita tidak melihatnya.
+   */
   async _confirm(txid, maxWaitMs = 60000) {
     const start = Date.now();
     while (Date.now() - start < maxWaitMs) {
@@ -310,7 +336,49 @@ export class SolanaChain {
       }
       await sleep(2000);
     }
-    log.warn(`tx ${txid} not confirmed after ${maxWaitMs / 1000}s`);
-    return false;
+
+    // === Last-chance: banyak tx stuck di 55-60s confirm di 70-75s ===
+    log.warn(`tx ${txid} not confirmed after ${maxWaitMs / 1000}s — waiting 15s more for last-chance check`);
+    await sleep(15000);
+    try {
+      const st = await this.connection.getSignatureStatuses([txid]);
+      const s = st?.value?.[0];
+      if (s?.confirmationStatus === 'confirmed' || s?.confirmationStatus === 'finalized') {
+        if (s.err) {
+          const err = new Error(`tx ${txid} failed on-chain: ${JSON.stringify(s.err)}`);
+          err.onChainFailure = true;
+          throw err;
+        }
+        log.info(`tx ${txid} confirmed on last-chance check`);
+        return true;
+      }
+    } catch (e) {
+      if (e.onChainFailure) throw e;
+    }
+
+    // === getTransaction fallback: baca langsung dari ledger, lebih reliable ===
+    try {
+      log.warn(`tx ${txid} — trying getTransaction as fallback`);
+      const tx = await this.connection.getTransaction(txid, {
+        commitment: 'confirmed',
+        maxSupportedTransactionVersion: 0,
+      });
+      if (tx) {
+        if (tx.meta?.err) {
+          const err = new Error(`tx ${txid} failed on-chain: ${JSON.stringify(tx.meta.err)}`);
+          err.onChainFailure = true;
+          throw err;
+        }
+        log.info(`tx ${txid} confirmed via getTransaction fallback`);
+        return true;
+      }
+    } catch (e) {
+      if (e.onChainFailure) throw e;
+      log.debug(`getTransaction fallback for ${txid} also failed: ${e.message}`);
+    }
+
+    // === Benar-benar tidak bisa konfirmasi, tapi tx sudah broadcast ===
+    log.warn(`tx ${txid} still unconfirmed after all attempts — tx was broadcast, may confirm later`);
+    return 'timeout';
   }
 }
