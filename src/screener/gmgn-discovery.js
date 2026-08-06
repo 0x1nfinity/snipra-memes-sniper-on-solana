@@ -58,8 +58,9 @@ function buildServerFilters(filters) {
   if (filters.maxAgeMinutes != null) {
     server.max_created = `${Math.round(filters.maxAgeMinutes)}m`;
   }
-  if (filters.minProgress != null) server.min_progress = filters.minProgress;
-  if (filters.maxProgress != null) server.max_progress = filters.maxProgress;
+  // Progress is 0-100 in config — GMGN API expects 0-1 fraction
+  if (filters.minProgress != null) server.min_progress = filters.minProgress / 100;
+  if (filters.maxProgress != null) server.max_progress = filters.maxProgress / 100;
   return server;
 }
 
@@ -113,7 +114,7 @@ function normalizeGmgnToken(raw, section) {
       mintable: false,
       top10Pct: raw.top_10_holder_rate != null ? raw.top_10_holder_rate * 100 : null,
     },
-    bondingProgress: raw.progress ?? 0,
+    bondingProgress: raw.progress != null ? raw.progress * 100 : 0,
     totalFee: raw.total_fee ?? 0,
     botDegenCount: raw.bot_degen_count ?? 0,
     botDegenRate: raw.bot_degen_rate ?? 0,

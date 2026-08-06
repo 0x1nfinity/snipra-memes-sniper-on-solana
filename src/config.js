@@ -85,8 +85,8 @@ export const DEFAULTS = {
       maxSwaps24h: null,
       minAgeMinutes: 30,
       maxAgeMinutes: 10080,             // 7 days
-      minProgress: 0,
-      maxProgress: 1,
+      minProgress: 0,                    // bonding curve % (0-100)
+      maxProgress: 100,
       maxRugRatio: 0.3,
       maxBundlerRate: 0.3,
       maxInsiderRate: 0.3,

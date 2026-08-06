@@ -114,7 +114,7 @@ export function score(c) {
   s += Math.min((c.botDegenCount || 0) / 10, 3);
   s += (c.totalFee || 0) > 0 ? 2 : 0;
   s += (c.socials || 0) > 0 ? 1 : 0;
-  s += (c.bondingProgress || 0) > 0.8 ? 2 : 0;
+  s += (c.bondingProgress || 0) > 80 ? 2 : 0;
   s += (c.priceChange?.h1 || 0) > 0 ? 1 : 0;
   s += (c.priceChange?.h24 || 0) > 0 ? 1 : 0;
   return s;
