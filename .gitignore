@@ -37,12 +37,15 @@ build/
 docs/superpowers/
 
 # Local strategy config — personal trading params, not for the repo.
-# Copy config.live.example.json / config.paper.example.json to get started;
+# Copy live-config.example.json / paper-config.example.json to get started;
 # the bot also auto-creates these with defaults on first run.
+live-config.json
+paper-config.json
+# Old config (migrated to paper-config.json + live-config.json)
+config.json
+# Old naming scheme (pre-v2 rename)
 config.live.json
 config.paper.json
-# Old config (migrated to config.paper.json + config.live.json)
-config.json
 # Migration backup
 config.json.migrated-*.bak
 # Mode marker (determined at runtime)

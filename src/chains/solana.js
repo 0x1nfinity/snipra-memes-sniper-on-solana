@@ -16,6 +16,7 @@ const SOL_MINT = 'So11111111111111111111111111111111111111112';
 const JUP_LITE = 'https://lite-api.jup.ag/swap/v1';
 const JUP_PRO = 'https://api.jup.ag/swap/v1';
 const GMGN_BASE = 'https://gmgn.ai';
+const PUMP_AMM = 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
 
 // Platform fee (Jupiter Swap API) — token account WSOL, mint boleh sisi input
 // ATAU output utk ExactIn, jadi satu account ini menampung fee dari kedua arah
@@ -114,6 +115,7 @@ export class SolanaChain {
       amount: rawAmount.toString(),
       slippageBps: String(slippageBps),
       restrictIntermediateTokens: 'true',
+      excludeDexes: PUMP_AMM,
       platformFeeBps: String(JUP_PLATFORM_FEE_BPS),
       instructionVersion: 'V2', // wajib utk kutip fee di token Token-2022 (custom 6014 kalau tak ada)
     });

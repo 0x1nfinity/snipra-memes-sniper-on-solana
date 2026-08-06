@@ -62,12 +62,21 @@ export async function fetchJson(url, opts = {}, { timeoutMs = 15000, retries = 2
       }
       if (!res.ok) {
         const body = await res.text().catch(() => '');
-        throw new Error(`HTTP ${res.status} ${url} :: ${body.slice(0, 300)}`);
+        const err = new Error(`HTTP ${res.status} ${url} :: ${body.slice(0, 300)}`);
+        // Don't retry permanent client errors (400-428, 430-499)
+        if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+          throw err;
+        }
+        throw err;
       }
       return await res.json();
     } catch (e) {
       clearTimeout(t);
       lastErr = e;
+      // Don't retry permanent errors even if they come from the catch block
+      if (e.statusCode && e.statusCode >= 400 && e.statusCode < 500 && e.statusCode !== 429) {
+        throw e;
+      }
       if (i < retries) await sleep(retryDelayMs * (i + 1));
     }
   }

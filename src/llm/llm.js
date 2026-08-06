@@ -50,11 +50,6 @@ export class LLM {
     return lessons.slice(-n);
   }
 
-  async assessToken(c) {
-    if (!this._backend) throw new Error('no LLM backend configured');
-    return this._backend.assessToken(c, this._lessonBlock(), fmtUsd);
-  }
-
   async assessBatch(candidates) {
     if (!this._backend) throw new Error('no LLM backend configured');
     const { cheapModel } = getConfig().llm;

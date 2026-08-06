@@ -18,8 +18,7 @@ const PROVIDERS = {
  * response into a fixed-length array aligned to the input candidate order.
  * Index yang TIDAK dijawab LLM di-default ke confidence 0 (= ditolak gate), bukan
  * buy 0.5 — respons batch parsial (mis. model murah yang truncate) tidak boleh
- * diam-diam membeli token yang belum benar-benar dinilai. Sejajar dengan
- * assessToken(), di mana confidence kosong jadi Number(undefined) || 0 = 0.
+ * diam-diam membeli token yang belum benar-benar dinilai.
  */
 export function parseBatchVerdicts(parsed, count) {
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -75,33 +74,6 @@ export class HttpBackend {
     const msg = await this._completion(messages, { json, model, maxTokens });
     if (!msg.content) throw new Error('respons LLM tanpa content');
     return msg.content;
-  }
-
-  async assessToken(c, lessonBlock, fmtUsd) {
-    const prompt = `You are an aggressive but disciplined memecoin sniper. The token below ALREADY PASSED all strict hard filters (liquidity, volume, age, market cap, holder count, holder concentration, honeypot check). Your default decision is BUY. Only choose "skip" if there is a SERIOUS red flag (e.g. clear dump in progress, extreme holder concentration, obvious rug pattern). Do NOT reject just because liquidity/market cap is "moderate" — the filters already guarantee a floor. Express your view through confidence only; position size is fixed by config.
-
-TOKEN:
-- ${sanitizePromptField(c.symbol)} (${sanitizePromptField(c.name)}) on ${c.chain}, dex ${c.dexId}
-- Pair age: ${c.ageMinutes?.toFixed(0)} min
-- Market cap ${fmtUsd(c.marketCap)} | Liquidity ${fmtUsd(c.liquidityUsd)} | Vol24h ${fmtUsd(c.volume24h)} (vol/liq ${(c.volume24h / (c.liquidityUsd || 1)).toFixed(2)})
-- Holders ${c.holders ?? 'unknown'} | top10 ${c.top10Pct != null ? c.top10Pct.toFixed(0) + '%' : 'unknown'} | tx24h ${c.traders24h} (buy/sell ${c.buySellRatio?.toFixed(2)})
-- Price change: 1h ${c.priceChange?.h1}% | 6h ${c.priceChange?.h6}% | 24h ${c.priceChange?.h24}%
-- Socials ${c.socials} | Security: honeypot=${c.security?.honeypot ?? 'unknown'}, mintable=${c.security?.mintable ?? 'unknown'}
-
-LESSONS FROM PAST TRADES (consider them):
-${lessonBlock}
-
-Reply ONLY JSON: {"action":"buy"|"skip","confidence":<0-1>,"risk":"low"|"medium"|"high","reason":"<1 short sentence, Indonesian>"}`;
-
-    const content = await this._chat([{ role: 'user', content: prompt }]);
-    const p = JSON.parse(content);
-    const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
-    return {
-      action: p.action === 'skip' ? 'skip' : 'buy',
-      confidence: clamp(Number(p.confidence) || 0, 0, 1),
-      risk: ['low', 'medium', 'high'].includes(p.risk) ? p.risk : 'medium',
-      reason: String(p.reason || '').slice(0, 300),
-    };
   }
 
   async assessBatch(candidates, lessonBlock, fmtUsd, { model } = {}) {

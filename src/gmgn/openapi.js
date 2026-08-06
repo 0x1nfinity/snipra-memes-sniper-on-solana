@@ -1,5 +1,8 @@
 import crypto from 'crypto';
 import { fetchJson } from '../utils.js';
+import { createLogger } from '../logger.js';
+
+const log = createLogger('gmgn-openapi');
 
 const BASE = 'https://openapi.gmgn.ai';
 
@@ -39,7 +42,11 @@ export async function findActivityByTx(walletAddress, tokenAddress, txid, { atte
       const match = res?.data?.activities?.find((a) => a.tx_hash === txid);
       if (match) return match;
     } catch (e) {
-      // swallow and retry — network/rate-limit blips shouldn't abort the whole lookup
+      // network/rate-limit blips — log and retry
+      // Log only status/code — never the raw message (API key is in headers, but
+      // fetchJson errors could theoretically echo request config in some runtimes).
+      const reason = e.statusCode ? `HTTP ${e.statusCode}` : (e.code || 'network');
+      log.warn(`findActivityByTx attempt ${i + 1}/${attempts} failed: ${reason}`);
     }
     if (i < attempts - 1) await new Promise((r) => setTimeout(r, delayMs));
   }
@@ -48,6 +55,7 @@ export async function findActivityByTx(walletAddress, tokenAddress, txid, { atte
 
 /** GET /v1/user/wallet_stats — aggregate realized PnL/winrate/cost for a wallet over a period. */
 export async function walletStats(walletAddress, { chain = 'sol', period = '7d' } = {}) {
+  if (!process.env.GMGN_API_KEY) throw new Error('GMGN_API_KEY not set — walletStats unavailable');
   const q = new URLSearchParams({ chain, wallet_address: walletAddress, period, ...authQuery() });
   return fetchJson(`${BASE}/v1/user/wallet_stats?${q}`, { headers: headers() });
 }

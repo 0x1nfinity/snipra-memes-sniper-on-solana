@@ -1,5 +1,5 @@
 import { createInterface } from 'readline';
-import { fmtUsd, sanitizePromptField } from '../utils.js';
+import { sanitizePromptField } from '../utils.js';
 
 export class StdioBackend {
   constructor({ timeout = 60000 } = {}) {
@@ -50,45 +50,6 @@ export class StdioBackend {
     });
   }
 
-  _failOpen(result) {
-    return result;
-  }
-
-  async assessToken(c, lessonBlock) {
-    const system = `You are an aggressive but disciplined memecoin sniper. The token below ALREADY PASSED all strict hard filters (liquidity, volume, age, market cap, holder count, holder concentration, honeypot check). Your default decision is BUY. Only choose "skip" if there is a SERIOUS red flag (e.g. clear dump in progress, extreme holder concentration, obvious rug pattern). Do NOT reject just because liquidity/market cap is "moderate" — the filters already guarantee a floor. Express your view through confidence only; position size is fixed by config.`;
-    const user = `TOKEN:
-- ${sanitizePromptField(c.symbol)} (${sanitizePromptField(c.name)}) on ${c.chain}, dex ${c.dexId}
-- Pair age: ${c.ageMinutes?.toFixed(0)} min
-- Market cap ${fmtUsd(c.marketCap)} | Liquidity ${fmtUsd(c.liquidityUsd)} | Vol24h ${fmtUsd(c.volume24h)} (vol/liq ${(c.volume24h / (c.liquidityUsd || 1)).toFixed(2)})
-- Holders ${c.holders ?? 'unknown'} | top10 ${c.top10Pct != null ? c.top10Pct.toFixed(0) + '%' : 'unknown'} | tx24h ${c.traders24h} (buy/sell ${c.buySellRatio?.toFixed(2)})
-- Price change: 1h ${c.priceChange?.h1}% | 6h ${c.priceChange?.h6}% | 24h ${c.priceChange?.h24}%
-- Socials ${c.socials} | Security: honeypot=${c.security?.honeypot ?? 'unknown'}, mintable=${c.security?.mintable ?? 'unknown'}
-
-LESSONS FROM PAST TRADES (consider them):
-${lessonBlock}
-
-Reply ONLY JSON: {"action":"buy"|"skip","confidence":<0-1>,"risk":"low"|"medium"|"high","reason":"<1 short sentence, Indonesian>"}`;
-
-    const resp = await this._request('assess_token', system, user, {
-      action: 'buy|skip',
-      confidence: 'number 0-1',
-      risk: 'low|medium|high',
-      reason: 'string',
-    });
-
-    if (!resp.ok || !resp.result) {
-      return { action: 'buy', confidence: 0.5, risk: 'medium', reason: 'LLM unavailable (failOpen)' };
-    }
-
-    const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
-    return {
-      action: resp.result.action === 'skip' ? 'skip' : 'buy',
-      confidence: clamp(Number(resp.result.confidence) || 0, 0, 1),
-      risk: ['low', 'medium', 'high'].includes(resp.result.risk) ? resp.result.risk : 'medium',
-      reason: String(resp.result.reason || '').slice(0, 300),
-    };
-  }
-
   async assessBatch(candidates, lessonBlock) {
     const system = `You are an aggressive but disciplined memecoin sniper. Every token in the list ALREADY PASSED strict hard filters. Default decision per token is BUY. Only "skip" a token if there is a SERIOUS red flag for THAT specific token. Assess EACH token independently.`;
     const list = candidates.map((c, i) =>
@@ -106,8 +67,7 @@ Reply ONLY JSON: {"action":"buy"|"skip","confidence":<0-1>,"risk":"low"|"medium"
 
     const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
     if (!resp.ok || !Array.isArray(resp.result?.verdicts)) {
-      // Seluruh batch gagal (agent/protokol unavailable) — failOpen hardcoded,
-      // konsisten dengan assessToken() di file ini.
+      // Seluruh batch gagal (agent/protokol unavailable) — failOpen hardcoded.
       return candidates.map(() => ({ action: 'buy', confidence: 0.5, risk: 'medium', reason: 'LLM unavailable (failOpen)' }));
     }
     // Verdict per-index yang tidak dijawab LLM dianggap GAGAL (confidence 0), BUKAN buy

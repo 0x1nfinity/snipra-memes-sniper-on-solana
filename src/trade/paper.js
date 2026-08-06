@@ -89,14 +89,14 @@ export class PaperChain {
   async buy(tokenAddress, amountNative, slippageBps) {
     await this._ensureWallet();
     const balance = paperBalance(this.key);
-    if (balance < amountNative) {
-      throw new Error(`saldo paper ${this.key} ${balance.toFixed(4)} < ${amountNative}`);
+    const gasFee = this._gasFee();
+    if (balance < amountNative + gasFee) {
+      throw new Error(`saldo paper ${this.key} ${balance.toFixed(4)} < ${(amountNative + gasFee).toFixed(6)} (incl gas)`);
     }
     const price = await this._priceNative(tokenAddress);
     const fillPrice = price * (1 + slippageBps / 10000); // beli lebih mahal (slippage)
     const tokens = amountNative / fillPrice;
 
-    const gasFee = this._gasFee();
     paperAdjustBalance(this.key, -(amountNative + gasFee));
     paperSetHolding(this.key, tokenAddress, paperHolding(this.key, tokenAddress) + tokens);
 

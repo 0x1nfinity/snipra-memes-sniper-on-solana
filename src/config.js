@@ -312,7 +312,7 @@ export function loadConfig() {
     try {
       config = buildConfig(activeMode);
     } catch (e) {
-    log.error(`live-config.json corrupted, using defaults:`, e.message);
+      log.error(`live-config.json corrupted, using defaults:`, e.message);
       config = structuredClone(DEFAULTS);
     }
   }

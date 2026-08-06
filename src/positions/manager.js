@@ -344,17 +344,24 @@ export class PositionManager {
 
   /** tutup semua posisi terbuka (dipakai /closeall) → ringkasan hasil */
   async closeAllPositions(reason = 'manual closeall') {
-    const results = [];
-    for (const pos of [...openPositions()]) {
-      try {
-        const { symbol, chain } = pos;
-        const trade = await this._closeAll(pos, reason);
-        results.push({ symbol, chain, pnl: trade.finalPnlPct });
-      } catch (e) {
-        results.push({ symbol: pos.symbol, chain: pos.chain, error: e.message });
+    // Prevent racing with tick() which also iterates and sells positions
+    while (this._busy) await new Promise((r) => setTimeout(r, 200));
+    this._busy = true;
+    try {
+      const results = [];
+      for (const pos of [...openPositions()]) {
+        try {
+          const { symbol, chain } = pos;
+          const trade = await this._closeAll(pos, reason);
+          results.push({ symbol, chain, pnl: trade.finalPnlPct });
+        } catch (e) {
+          results.push({ symbol: pos.symbol, chain: pos.chain, error: e.message });
+        }
       }
+      return results;
+    } finally {
+      this._busy = false;
     }
-    return results;
   }
 
   /** sellPct tier dihitung dari SISA posisi → konversi ke % balance on-chain saat ini (sama saja, karena balance = sisa). */

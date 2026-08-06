@@ -3,7 +3,7 @@ import { discover } from './dexscreener.js';
 import { tokenSecurity } from './goplus.js';
 import { evaluate, score } from './filters.js';
 import { preScore, PRE_SCORE_THRESHOLD } from './preScorer.js';
-import { athObserve, checkDecisionCache, storeDecisionCache, pruneExpiredDecisionCache } from '../db.js';
+import { checkDecisionCache, storeDecisionCache, pruneExpiredDecisionCache } from '../db.js';
 import { mapLimit, fetchJson } from '../utils.js';
 import { createLogger } from '../logger.js';
 import { discoverFromGmgn } from './gmgn-discovery.js';
@@ -263,7 +263,7 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
     candidates = gated;
   }
 
-  for (const c of candidates) c.exitGenes = exitGenes;
+  for (const c of candidates) c.exitGenes = exitGenes || {};
   log.info(`final candidates: ${candidates.map((c) => c.symbol).join(', ') || '(none)'}`);
   return { candidates, genomeId, scanned: candidates.length };
 }

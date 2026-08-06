@@ -118,13 +118,14 @@ export async function runEvolve(trigger = 'manual', deps) {
 
 export function onTradeClosed(trade) {
   breaker.recordClose(trade.chain);
+  if (!_deps || !_deps.darwin) return; // guard: deps not yet wired (early startup reconciliation)
   const { darwin, llm, getConfig } = _deps;
   const cfg = getConfig();
   if (cfg.darwin.enabled) {
     const due = darwin.recordTrade(trade);
     if (due) runEvolve('auto').catch((e) => log.error('auto-evolve failed:', e.message));
   }
-  if (cfg.llm.enabled && llm.available()) {
+  if (cfg.llm.enabled && llm && llm.available()) {
     llm.recordTradeLesson(trade).catch(() => {});
   }
 }

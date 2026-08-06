@@ -87,7 +87,7 @@ export class Executor {
     }
 
     const balance = await chain.nativeBalance();
-    const reserve = getActiveMode() === 'live' ? GAS_RESERVE.solana : 0;
+    const reserve = getActiveMode() === 'live' ? (GAS_RESERVE[chainKey] ?? 0.01) : 0;
     if (balance - reserve < amount) {
       throw new Error(
         `insufficient ${chainKey} balance: ${balance.toFixed(6)} native` +
@@ -130,11 +130,15 @@ export class Executor {
     // 2. Derive lessons strategis dari riwayat sebelum data dihapus
     let lessonsDerived = 0;
     if (llm?.available()) {
-      const trades = recentTrades('paper', 50);
-      if (trades.length > 0) {
-        const existingLessons = llm.getLessons(20);
-        const derived = await llm.deriveResetLessons(trades, existingLessons);
-        lessonsDerived = derived.length;
+      try {
+        const trades = recentTrades('paper', 50);
+        if (trades.length > 0) {
+          const existingLessons = llm.getLessons(20);
+          const derived = await llm.deriveResetLessons(trades, existingLessons);
+          lessonsDerived = derived.length;
+        }
+      } catch (e) {
+        log.warn('paperReset: LLM derive lessons failed, lanjut tanpa lessons:', e.message);
       }
     }
 

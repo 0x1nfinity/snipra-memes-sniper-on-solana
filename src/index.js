@@ -14,8 +14,9 @@ import { fmtUsd, fmtPct } from './utils.js';
 import { createLogger } from './logger.js';
 import { buyToken, sellToken } from './trade/helpers.js';
 import { runEvolve, onTradeClosed, setEvolveDeps } from './darwin/evolve.js';
-import { sendStatusReport, startStatusLoop, stopStatusLoop, setStatusDeps } from './telegram/reports.js';
+import { startStatusLoop, stopStatusLoop, setStatusDeps } from './telegram/reports.js';
 import { createScreeningCycle, startScreeningLoop as startScreeningTimer, createBotContext } from './llm/loops.js';
+import { LLM_TOOL_DEFS, createToolRunner } from './llm/tools.js';
 
 const log = createLogger('main');
 
@@ -42,101 +43,13 @@ let _stopScreening = null;
 
 const botContext = createBotContext({ darwin, statsSummary });
 
-// ===== LLM tool-calling (#4): definisi + eksekutor =====
+// ===== LLM tool-calling (#4): definisi + eksekutor (shared, lihat src/llm/tools.js) =====
 
-const LLM_TOOL_DEFS = [
-  {
-    type: 'function',
-    function: {
-      name: 'get_positions',
-      description: 'Get the current list of open positions + PnL + moonbag.',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'screen_now',
-      description: 'Run one screening cycle now and immediately buy candidates that pass.',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'buy_token',
-      description: 'Buy a token. Needs chain and address; amount optional (native SOL).',
-      parameters: {
-        type: 'object',
-        properties: {
-          chain: { type: 'string', enum: ['solana'] },
-          address: { type: 'string' },
-          amount: { type: 'number', description: 'optional native amount; empty = default buyAmount' },
-        },
-        required: ['chain', 'address'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'sell_token',
-      description: 'Sell a position/moonbag by token address. pct defaults to 100.',
-      parameters: {
-        type: 'object',
-        properties: {
-          address: { type: 'string' },
-          pct: { type: 'number', description: 'percent of holdings 1-100' },
-        },
-        required: ['address'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'close_all_positions',
-      description: 'Close ALL open positions now.',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-];
-
-function inferChain(address) {
-  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address) ? 'solana' : null;
-}
-
-async function runLlmTool(name, args) {
-  switch (name) {
-    case 'get_positions': {
-      const pos = openPositions().map((p) => ({
-        chain: p.chain, symbol: p.symbol, address: p.address,
-        pnlPct: +currentPnlPct(p).toFixed(1), remainingPct: p.remainingPct,
-      }));
-      return { openCount: pos.length, positions: pos, moonbags: moonbags().length };
-    }
-    case 'screen_now': {
-      await screeningCycle(true);
-      return { ok: true, note: 'screening triggered; results sent as a separate notification' };
-    }
-    case 'buy_token': {
-      const chain = args.chain || inferChain(args.address);
-      if (!chain) return { error: 'unknown chain' };
-      const pos = await buyToken(chain, args.address, args.amount, 'llm-tool', null, executor, onTradeClosed);
-      return { ok: true, symbol: pos.symbol, chain, entryPrice: pos.entryPrice, tx: pos.txid };
-    }
-    case 'sell_token': {
-      const res = await sellToken(args.address, args.pct ?? 100, executor, onTradeClosed);
-      return { ok: true, receivedNative: res.receivedNative, tx: res.txid };
-    }
-    case 'close_all_positions': {
-      const results = await positionManager.closeAllPositions('llm-tool');
-      return { ok: true, closed: results.filter((r) => !r.error).length, results };
-    }
-    default:
-      return { error: `unknown tool: ${name}` };
-  }
-}
+const runLlmTool = createToolRunner({
+  openPositions, currentPnlPct, moonbags, buyToken, sellToken, executor, onTradeClosed,
+  screeningCycle: (force) => screeningCycle(force),
+  closeAllPositions: (reason) => positionManager.closeAllPositions(reason),
+});
 
 // ===== komponen utama =====
 
