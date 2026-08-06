@@ -47,6 +47,11 @@ function buildServerFilters(filters) {
     const val = filters[configKey];
     if (val != null) server[apiKey] = val;
   }
+  // maxTop10HolderRate is now a percentage (0-100) in config — GMGN API expects
+  // a fraction (0-1), so convert it back here.
+  if (server.max_top_holder_rate != null) {
+    server.max_top_holder_rate = server.max_top_holder_rate / 100;
+  }
   if (filters.minAgeMinutes != null) {
     server.min_created = `${Math.round(filters.minAgeMinutes)}m`;
   }
@@ -113,7 +118,7 @@ function normalizeGmgnToken(raw, section) {
     botDegenCount: raw.bot_degen_count ?? 0,
     botDegenRate: raw.bot_degen_rate ?? 0,
     devHoldRate: raw.dev_team_hold_rate ?? 0,
-    top10HolderRate: raw.top_10_holder_rate ?? 0,
+    top10HolderRate: raw.top_10_holder_rate != null ? raw.top_10_holder_rate * 100 : 0,
     smartDegenCount: raw.smart_degen_count ?? 0,
     sniperCount: raw.sniper_count ?? 0,
     renownedCount: raw.renowned_count ?? 0,

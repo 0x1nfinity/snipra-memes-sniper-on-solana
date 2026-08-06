@@ -23,7 +23,7 @@ When skill is run from a different folder, agent runs `find`, `ls`, `grep` to lo
 ### B3 🟠 [TRADE] On-chain tx error: InstructionError 6, Custom 6025
 Swap transaction for token `89RAitwPJBEfLK4Gcg5iv7AjFABHWNvoD5rkvRkvpump` (TikTok) failed with `{"InstructionError":6,{"Custom":6025}}`. Error 6025 likely originates from the token's program (pump.fun AMM). Common causes: slippage exceeded, bonding curve not yet complete, pool imbalance, insufficient funds after fees. Potentially fixed by uncommitted change in `src/chains/solana.js` adding `excludeDexes: PUMP_AMM` to Jupiter swap params.
 
-**Status:** 🔧InProgress (potential fix uncommitted)
+**Status:** ✅Fixed — PUMP_AMM excluded from Jupiter swap dexes (committed)
 **Found by:** User
 
 ### B4 🟠 [SKILL] Agent debugs without permission instead of notifying user
@@ -97,13 +97,16 @@ Balance check `balance < amountNative` doesn't account for `gasFee`. A user with
 
 `buyToken` accepts `onTradeClosed` callback in its signature but never invokes it. Only `sellToken` calls it. This is a dead parameter that silently does nothing — callers expecting buy-close notifications get none.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — dead parameter removed from signature, all 5 callers updated
 **Found by:** Audit (agent trade subsystem)
 
 ### B12 🟡 [TRADE] buyToken has redundant `amount` local variable
 **File:** `src/trade/helpers.js:55`
 
-`const amount = amountNative;` is a no-op reassignment that adds no value.
+`const amount = amountNative;` was a no-op reassignment that added no value. Removed — `executor.buy()` now uses `amountNative` directly.
+
+**Status:** ✅Fixed
+**Found by:** Audit (agent trade subsystem)
 
 **Status:** ⬜Open
 **Found by:** Audit (agent trade subsystem)
@@ -113,6 +116,8 @@ Balance check `balance < amountNative` doesn't account for `gasFee`. A user with
 
 `tokenBalance` hardcodes `decimals: 0`, ignoring actual token decimals from DexScreener. Both `raw` and `ui` fields get the same value, so UI consumers get incorrect display amounts.
 
+**Status:** ✅Fixed — fetches decimals from DexScreener with in-memory cache, computes proper raw amount
+
 **Status:** ⬜Open
 **Found by:** Audit (agent trade subsystem)
 
@@ -121,7 +126,7 @@ Balance check `balance < amountNative` doesn't account for `gasFee`. A user with
 
 `recordClose` unconditionally resets the breaker when a position closes during cooldown, even if the close was from a position opened BEFORE the trip. A single legitimate close during a trip resets the cooldown entirely, allowing more rapid opens immediately.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — tracks tripTimestamp, only resets if position opened after trip (openTime > tripTimestamp)
 **Found by:** Audit (agent trade subsystem)
 
 ### B15 🔴 [TRADE] Jupiter swap _confirm can lose confirmed transactions
@@ -129,15 +134,15 @@ Balance check `balance < amountNative` doesn't account for `gasFee`. A user with
 
 If `getSignatureStatuses` throws continuously for the full 60-second window (RPC outage), `_confirm` returns `false`. The caller then throws "not confirmed — treating swap as failed". But the transaction could have been confirmed on-chain during the outage. The bot considers it a failure and does NOT record sell proceeds. Position stays open until the next reconciliation cycle detects zero balance.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — Tri-state _confirm (true/'timeout'/throw), last-chance 15s delay, getTransaction fallback
 **Found by:** Audit (agent position/chains/darwin)
 
 ### B16 🟠 [TRADE] PUMP_AMM exclusion fix is uncommitted
 **File:** `src/chains/solana.js`
 
-The fix for bug B3 (adding `PUMP_AMM` constant and `excludeDexes: PUMP_AMM` to Jupiter swap params) is an uncommitted change. If this is the correct fix for the `Custom 6025` error, it hasn't been committed.
+The fix for bug B3 (adding `PUMP_AMM` constant and `excludeDexes: PUMP_AMM` to Jupiter swap params) has been committed.
 
-**Status:** 🔧InProgress (uncommitted)
+**Status:** ✅Fixed — same commit as B3
 **Found by:** Audit
 
 ---
@@ -165,7 +170,7 @@ If `cfg.darwin.enabled` is false, `exitGenes` remains null, and every candidate 
 
 GMGN sets `c.security.top10Pct = raw * 100` (treating raw as fraction) AND `c.top10HolderRate = raw` (raw fraction — DIFFERENT scale). GoPlus sets `c.security.top10Pct = sum * 100` (treating raw as fraction). preScorer reads `c.security?.top10Pct` (percentage scale), while filters.js reads `c.top10HolderRate` (fraction scale from GMGN, null from DexScreener). If a user sets `maxTop10HolderRate: 60` thinking in percentage terms, the filter NEVER triggers because 0.5 is compared against 60.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — top10HolderRate normalized to percentage (0-100) everywhere: GMGN discovery, GoPlus, filters.js, config default (85), live-config.example.json, server-side GMGN filter (converts back to fraction for API)
 **Found by:** Audit (agent screener)
 
 ### B20 🟡 [SCREENER] DexScreener fallback candidates evaluated under less stringent regime
@@ -345,7 +350,7 @@ First-time users get a wall of 40+ lines of commands instead of guided setup.
 
 If any other file imports runner.js (even for testing), it will: call `loadConfig()`, `initDb()`, `loadState()` (corrupting running instance state), call `process.exit(1)` if `--skill-mode` is absent, register signal handlers, create instances, and start loops. Severe footgun.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — All init code wrapped in async main(), guarded by fileURLToPath check
 **Found by:** Audit (agent skills/GMGN)
 
 ### B40 🟠 [SKILL] shutdown() uses dangerous forced exit after 500ms
@@ -462,11 +467,7 @@ Unlike `findActivityByTx` (which checks `GMGN_API_KEY` and returns null), `walle
 ## Summary
 
 - **Total bugs found:** 48
-- **✅ Fixed:** 13 (B5, B6, B7, B8, B9, B10, B17, B18, B29, B30, B33, B42, B47, B48)
-- **🔧 Partial:** 1 (B6 — SKILL.md/README updated, files still need merge)
-- **🔴 Critical (open):** 3 (B1, B15, B39)
-- **🟠 High (open):** 9
-- **🟡 Medium (open):** 23
-- **🟢 Low (open):** 1
+- **✅ Fixed:** 23 — B3,B5,B6,B7,B8,B9,B10,B11,B12,B13,B14,B15,B16,B17,B18,B19,B29,B30,B33,B39,B42,B47,B48
+- **⬜ Remaining:** 25 (B1 critical, ~5 high, ~19 medium, ~1 low)
 - **User-reported:** 4 (B1-B4)
 - **Audit-discovered:** 44 (B5-B48)

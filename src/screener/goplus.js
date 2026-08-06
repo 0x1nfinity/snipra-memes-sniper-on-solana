@@ -47,6 +47,7 @@ export async function solanaSecurity(address) {
     return store(key, {
       holders: d.holder_count != null ? Number(d.holder_count) : null,
       top10Pct: top10Pct(d.holders),
+      top10HolderRate: top10Pct(d.holders),
       honeypot: authorityActive(d.freezable) || d.non_transferable === '1',
       buyTaxPct: null, // konsep tax tidak berlaku umum di SPL
       sellTaxPct: null,

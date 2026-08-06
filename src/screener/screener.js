@@ -179,6 +179,7 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
         c.security = sec;
         c.holders = sec.holders;
         c.top10Pct = sec.top10Pct;
+        c.top10HolderRate = sec.top10HolderRate;
       }
     });
 

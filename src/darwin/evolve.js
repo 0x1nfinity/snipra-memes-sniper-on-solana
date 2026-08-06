@@ -117,7 +117,7 @@ export async function runEvolve(trigger = 'manual', deps) {
 // ===== feedback loop: trade close → darwin fitness + LLM lesson =====
 
 export function onTradeClosed(trade) {
-  breaker.recordClose(trade.chain);
+  breaker.recordClose(trade.chain, trade.openedAt);
   if (!_deps || !_deps.darwin) return; // guard: deps not yet wired (early startup reconciliation)
   const { darwin, llm, getConfig } = _deps;
   const cfg = getConfig();

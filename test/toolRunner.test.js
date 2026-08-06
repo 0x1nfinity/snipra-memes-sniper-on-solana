@@ -50,7 +50,7 @@ test('buy_token calls the injected buyToken with the resolved chain and fixed ar
     executor: 'EXEC', onTradeClosed: 'ON_CLOSE',
   });
   const result = await runLlmTool('buy_token', { chain: 'solana', address: 'abc', amount: 0.5 });
-  assert.deepEqual(capturedArgs, ['solana', 'abc', 0.5, 'llm-tool', null, 'EXEC', 'ON_CLOSE']);
+  assert.deepEqual(capturedArgs, ['solana', 'abc', 0.5, 'llm-tool', null, 'EXEC']);
   assert.deepEqual(result, { ok: true, symbol: 'FOO', chain: 'solana', entryPrice: 0.001, tx: 'tx1' });
 });
 

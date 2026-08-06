@@ -26,7 +26,7 @@ export async function resolveCandidate(chainKey, address) {
   return normalizePair(pair, chainKey);
 }
 
-export async function buyToken(chainKey, address, amountNative, source, candidate, executor, onTradeClosed) {
+export async function buyToken(chainKey, address, amountNative, source, candidate, executor) {
   const cfg = getConfig();
   if (!cfg.chains[chainKey]?.enabled)
     throw new Error(`chain ${chainKey} disabled`);
@@ -52,7 +52,6 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
 
   breaker.check(chainKey);
 
-  const amount = amountNative;
   // Math.max(0, …): buyMaxRetries negatif (salah konfigurasi) jangan sampai membuat
   // loop tidak jalan sama sekali dan res tetap undefined.
   const maxRetries = Math.max(0, cfg.trading.buyMaxRetries ?? 0);
@@ -60,7 +59,7 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
   let res;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      res = await executor.buy(chainKey, c.address, amount, { labels: c.labels });
+      res = await executor.buy(chainKey, c.address, amountNative, { labels: c.labels });
       if (attempt > 0) log.info(`buy retry #${attempt} succeeded for ${c.symbol}`);
       break;
     } catch (e) {

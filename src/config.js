@@ -90,7 +90,7 @@ export const DEFAULTS = {
       minTotalFee: null,
       maxTotalFee: null,
       maxBotDegenRate: null,
-      maxTop10HolderRate: 0.85,
+      maxTop10HolderRate: 85,
       maxDevHoldRate: null,
       minSmartDegenCount: null,
       maxFreshWalletRate: null,

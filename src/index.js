@@ -64,7 +64,7 @@ const telegram = new Telegram({
   darwin,
   llm,
   positionManager,
-  buyToken: (chain, addr, amt, source) => buyToken(chain, addr, amt, source || 'telegram-button', null, executor, onTradeClosed),
+  buyToken: (chain, addr, amt, source) => buyToken(chain, addr, amt, source || 'telegram-button', null, executor),
   sellToken: (addr, pct) => sellToken(addr, pct, executor, onTradeClosed),
   screenNow: () => screeningCycle(true), // screening + langsung buy yang lolos
   runEvolve,
@@ -104,7 +104,7 @@ setStatusDeps({
 
 const screeningCycle = createScreeningCycle({
   darwin, llm, executor, telegram,
-  buyToken: (chain, addr, amt, source, c) => buyToken(chain, addr, amt, source, c, executor, onTradeClosed),
+  buyToken: (chain, addr, amt, source, c) => buyToken(chain, addr, amt, source, c, executor),
   onTradeClosed,
   paused: () => paused,
   screenBusy: (v) => { if (v !== undefined) screenBusyFlag = v; return screenBusyFlag; },

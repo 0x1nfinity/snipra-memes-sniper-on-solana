@@ -73,7 +73,7 @@ async function main() {
   // Telegram: non-interactive mode (notifications only)
   const telegram = new Telegram({
     executor, darwin, llm, positionManager,
-    buyToken: (chain, addr, amt, source) => buyToken(chain, addr, amt, source || 'telegram-button', null, executor, onTradeClosed),
+    buyToken: (chain, addr, amt, source) => buyToken(chain, addr, amt, source || 'telegram-button', null, executor),
     sellToken: (addr, pct) => sellToken(addr, pct, executor, onTradeClosed),
     screenNow: () => screeningCycle(true),
     runEvolve,
@@ -97,7 +97,7 @@ async function main() {
   // Screening cycle
   const screeningCycle = createScreeningCycle({
     darwin, llm, executor, telegram,
-    buyToken: (chain, addr, amt, source, c) => buyToken(chain, addr, amt, source, c, executor, onTradeClosed),
+    buyToken: (chain, addr, amt, source, c) => buyToken(chain, addr, amt, source, c, executor),
     onTradeClosed,
     paused: () => paused,
     screenBusy: (v) => { if (v !== undefined) screenBusyFlag = v; return screenBusyFlag; },

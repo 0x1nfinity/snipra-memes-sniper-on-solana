@@ -61,7 +61,23 @@ export class PaperChain {
 
   async tokenBalance(token) {
     const ui = paperHolding(this.key, token);
-    return { raw: ui, decimals: 0, ui };
+    let decimals = this._decimalsCache?.get(token.toLowerCase());
+    if (decimals == null) {
+      try {
+        const pairs = await tokensBatch(this.cfg.dexscreenerId, [token]);
+        const mine = pairs.filter(
+          (p) => p?.baseToken?.address?.toLowerCase() === token.toLowerCase()
+        );
+        const pair = bestPair(mine);
+        decimals = pair?.baseToken?.decimals ?? pair?.quoteToken?.decimals ?? 0;
+      } catch {
+        decimals = 0;
+      }
+      if (!this._decimalsCache) this._decimalsCache = new Map();
+      this._decimalsCache.set(token.toLowerCase(), decimals);
+    }
+    const raw = BigInt(Math.floor(ui * (10 ** decimals)));
+    return { raw, decimals, ui };
   }
 
   /** harga token dalam native (SOL/ETH) dari pair terlikuid; null jika tak tersedia */

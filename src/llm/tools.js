@@ -91,7 +91,7 @@ export function createToolRunner(deps) {
       case 'buy_token': {
         const chain = args.chain || inferChain(args.address);
         if (!chain) return { error: 'unknown chain' };
-        const pos = await buyToken(chain, args.address, args.amount, 'llm-tool', null, executor, onTradeClosed);
+        const pos = await buyToken(chain, args.address, args.amount, 'llm-tool', null, executor);
         return { ok: true, symbol: pos.symbol, chain, entryPrice: pos.entryPrice, tx: pos.txid };
       }
       case 'sell_token': {
