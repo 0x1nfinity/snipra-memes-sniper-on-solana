@@ -142,7 +142,8 @@ async function fetchTrenches(apiKey, section, filters, launchpads, limit) {
   }
   const tokens = res.data?.[section];
   if (!Array.isArray(tokens)) {
-    throw new Error(`GMGN returned no ${section} array in response`);
+    log.warn(`GMGN ${section}: no tokens array in response (data keys: ${Object.keys(res.data || {}).join(', ') || 'none'}), treating as empty`);
+    return [];
   }
   return tokens;
 }

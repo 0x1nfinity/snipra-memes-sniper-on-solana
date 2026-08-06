@@ -67,7 +67,6 @@ export const DEFAULTS = {
   screener: {
     maxCandidatesPerCycle: 3,
     source: 'gmgn',                     // 'gmgn' | 'dexscreener'
-    gmgnApiKeys: [],                    // [key1, key2, key3] — sequential fallback
     section: 'new_creation',            // 'new_creation' | 'near_completion' | 'completed'
     filters: {
       launchpads: ['Pump.fun'],         // [] or null = all launchpads
@@ -262,6 +261,10 @@ function buildConfig(mode) {
   merged.chains = {
     solana: { ...CHAIN_FIXED.solana, buyAmount: merged.trading.buyAmount },
   };
+
+  // gmgnApiKeys dibaca dari env, bukan dari file config
+  const keysEnv = process.env.GMGN_API_KEYS || process.env.GMGN_API_KEY || '';
+  merged.screener.gmgnApiKeys = keysEnv.split(',').map((k) => k.trim()).filter(Boolean);
 
   return merged;
 }
