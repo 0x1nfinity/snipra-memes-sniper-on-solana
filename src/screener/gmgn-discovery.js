@@ -19,44 +19,37 @@ const SOLANA_TRENCHES_BODY_BASE = {
   quote_address_type: [4, 5, 3, 1, 13, 0],
 };
 
+/**
+ * Build server-side filter params sent to the GMGN API.
+ *
+ * IMPORTANT: Only RISK/QUALITY filters are sent server-side.
+ * Market-data filters (volume, liquidity, mcap, holders, swaps, age, fee)
+ * are applied CLIENT-SIDE only via filters.js. Sending them server-side
+ * kills all new_creation tokens because fresh tokens haven't built those
+ * metrics yet — GMGN returns an empty list instead of tokens with low metrics.
+ */
 function buildServerFilters(filters) {
+  // Only risk/quality filters — these are intrinsic token properties that are
+  // safe to filter server-side without killing new tokens.
   const map = {
-    minVolume24h: 'min_volume_24h',
-    maxVolume24h: 'max_volume_24h',
-    minLiquidity: 'min_liquidity',
-    maxLiquidity: 'max_liquidity',
-    minMarketCap: 'min_marketcap',
-    maxMarketCap: 'max_marketcap',
-    minHolders: 'min_holder_count',
-    maxHolders: 'max_holder_count',
-    minSwaps24h: 'min_swaps_24h',
-    maxSwaps24h: 'max_swaps_24h',
     maxRugRatio: 'max_rug_ratio',
     maxBundlerRate: 'max_bundler_rate',
     maxInsiderRate: 'max_insider_ratio',
-    minTotalFee: 'min_total_fee',
-    maxTotalFee: 'max_total_fee',
-    maxBotDegenRate: 'max_bot_degen_rate',
     maxTop10HolderRate: 'max_top_holder_rate',
     maxDevHoldRate: 'max_creator_balance_rate',
-    minSmartDegenCount: 'min_smart_degen_count',
+    maxBotDegenRate: 'max_bot_degen_rate',
     maxFreshWalletRate: 'max_fresh_wallet_rate',
+    minSmartDegenCount: 'min_smart_degen_count',
   };
   const server = {};
   for (const [configKey, apiKey] of Object.entries(map)) {
     const val = filters[configKey];
     if (val != null) server[apiKey] = val;
   }
-  // maxTop10HolderRate is now a percentage (0-100) in config — GMGN API expects
+  // maxTop10HolderRate is a percentage (0-100) in config — GMGN API expects
   // a fraction (0-1), so convert it back here.
   if (server.max_top_holder_rate != null) {
     server.max_top_holder_rate = server.max_top_holder_rate / 100;
-  }
-  if (filters.minAgeMinutes != null) {
-    server.min_created = `${Math.round(filters.minAgeMinutes)}m`;
-  }
-  if (filters.maxAgeMinutes != null) {
-    server.max_created = `${Math.round(filters.maxAgeMinutes)}m`;
   }
   // Progress is 0-100 in config — GMGN API expects 0-1 fraction
   if (filters.minProgress != null) server.min_progress = filters.minProgress / 100;
