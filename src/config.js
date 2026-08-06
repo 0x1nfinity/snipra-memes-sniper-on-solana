@@ -263,7 +263,12 @@ function buildConfig(mode) {
   // di-hardcode (CHAIN_FIXED), hanya buyAmount yang ikut trading.buyAmount (bisa
   // beda live/paper). Dipasang di sini biar konsumen lama (cfg.chains[...]) jalan.
   merged.chains = {
-    solana: { ...CHAIN_FIXED.solana, buyAmount: merged.trading.buyAmount },
+    solana: {
+      ...CHAIN_FIXED.solana,
+      buyAmount: merged.trading.buyAmount,
+      // User-overridable: /set chains.solana.executor gmgn
+      executor: merged.chains?.solana?.executor || CHAIN_FIXED.solana.executor,
+    },
   };
 
   // gmgnApiKeys dibaca dari env, bukan dari file config

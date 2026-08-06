@@ -242,6 +242,7 @@ export class SolanaChain {
   }
 
   async _swap(inputMint, outputMint, rawAmount, slippageBps) {
+    const gmgnKey = getGmgnApiKey();
     if (this.cfg.executor === 'gmgn' && gmgnKey) {
       try {
         return await this._gmgnSwap(inputMint, outputMint, rawAmount, slippageBps);
