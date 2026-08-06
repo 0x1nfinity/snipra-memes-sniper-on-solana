@@ -7,24 +7,25 @@ const fmtK = (v) => (v >= 1e6 ? `${(v / 1e6).toFixed(v % 1e6 ? 1 : 0)}M` : v >= 
 // Hanya setting operasional yang aman; LLM/Darwin/teknis TIDAK diekspos.
 // group: 'main' (trading/eksekusi) atau 'filter' (hard filter screening).
 const MENU_NUM = {
-  // ── main / trading ──
-  si: { group: 'main', path: 'telegram.screeningcyclemin', step: 5, min: 5, max: 360, label: '🔍 Scan', fmt: (v) => `${v}m` },
-  bs: { group: 'main', path: 'trading.buyAmount', step: 0.05, min: 0.05, max: 50, label: '💰 Buy SOL', fmt: (v) => `${+v.toFixed(3)}` },
-  sl: { group: 'main', path: 'trading.stopLossPct', step: 5, min: -90, max: -5, label: '🛑 SL', fmt: (v) => `${v}%` },
-  cd: { group: 'main', path: 'trading.cooldownMinutes', step: 30, min: 0, max: 1440, label: '⏳ Cooldown', fmt: (v) => `${v}m` },
-  cn: { group: 'main', path: 'trading.maxTradesBeforeCooldown', step: 1, min: 1, max: 20, label: '🔁 Cooldown after', fmt: (v) => `${v}x` },
-  ta: { group: 'main', path: 'trailing.activateGainPct', step: 5, min: 5, max: 500, label: '📈 Trail↑', fmt: (v) => `${v}%` },
-  tp: { group: 'main', path: 'trailing.trailPct', step: 1, min: 1, max: 50, label: '📉 Trail↓', fmt: (v) => `${v}%` },
-  // ── filter / hard filter screening ──
-  fvol: { group: 'filter', path: 'screener.filters.minVolume24hUsd', step: 10000, min: 0, max: 5e6, label: '📊 Vol', fmt: (v) => `$${fmtK(v)}` },
-  fliq: { group: 'filter', path: 'screener.filters.minLiquidityUsd', step: 5000, min: 0, max: 2e6, label: '💧 Liq', fmt: (v) => `$${fmtK(v)}` },
-  fmcn: { group: 'filter', path: 'screener.filters.minMarketCapUsd', step: 10000, min: 0, max: 5e6, label: '💰 MC↓', fmt: (v) => `$${fmtK(v)}` },
-  fmcx: { group: 'filter', path: 'screener.filters.maxMarketCapUsd', step: 1e6, min: 1e6, max: 1e8, label: '💰 MC↑', fmt: (v) => `$${fmtK(v)}` },
-  fagn: { group: 'filter', path: 'screener.filters.minAgeHours', step: 0.25, min: 0, max: 24, label: '⏱ Age↓', fmt: (v) => `${v}h` },
-  fagx: { group: 'filter', path: 'screener.filters.maxAgeHours', step: 12, min: 12, max: 720, label: '⏱ Age↑', fmt: (v) => `${v}h` },
-  fhld: { group: 'filter', path: 'screener.filters.minHolders', step: 50, min: 0, max: 10000, label: '👥 Hold', fmt: (v) => `${v}` },
-  ftx: { group: 'filter', path: 'screener.filters.minTraders24h', step: 50, min: 0, max: 10000, label: '🔁 Tx', fmt: (v) => `${v}` },
-  ft10: { group: 'filter', path: 'screener.filters.maxTop10Pct', step: 5, min: 0, max: 100, label: '🔝 Top10', fmt: (v) => `${v}%` },
+  // main / trading
+  si: { group: 'main', path: 'telegram.screeningcyclemin', step: 5, min: 5, max: 360, label: 'Scan', fmt: (v) => `${v}m` },
+  bs: { group: 'main', path: 'trading.buyAmount', step: 0.05, min: 0.05, max: 50, label: 'Buy SOL', fmt: (v) => `${+v.toFixed(3)}` },
+  sl: { group: 'main', path: 'trading.stopLossPct', step: 5, min: -90, max: -5, label: 'SL', fmt: (v) => `${v}%` },
+  cd: { group: 'main', path: 'trading.cooldownMinutes', step: 30, min: 0, max: 1440, label: 'Cooldown', fmt: (v) => `${v}m` },
+  cn: { group: 'main', path: 'trading.maxTradesBeforeCooldown', step: 1, min: 1, max: 20, label: 'Cooldown after', fmt: (v) => `${v}x` },
+  ta: { group: 'main', path: 'trailing.activateGainPct', step: 5, min: 5, max: 500, label: 'Trail+', fmt: (v) => `${v}%` },
+  tp: { group: 'main', path: 'trailing.trailPct', step: 1, min: 1, max: 50, label: 'Trail-', fmt: (v) => `${v}%` },
+  // filter
+  fvol: { group: 'filter', path: 'screener.filters.minVolume24h', step: 10000, min: 0, max: 5000000, label: 'Vol', fmt: (v) => `$${fmtK(v)}` },
+  fliq: { group: 'filter', path: 'screener.filters.minLiquidity', step: 5000, min: 0, max: 2000000, label: 'Liq', fmt: (v) => `$${fmtK(v)}` },
+  fmcn: { group: 'filter', path: 'screener.filters.minMarketCap', step: 10000, min: 0, max: 5000000, label: 'MC-', fmt: (v) => `$${fmtK(v)}` },
+  fmcx: { group: 'filter', path: 'screener.filters.maxMarketCap', step: 1000000, min: 1000000, max: 100000000, label: 'MC+', fmt: (v) => `$${fmtK(v)}` },
+  fagn: { group: 'filter', path: 'screener.filters.minAgeMinutes', step: 15, min: 0, max: 1440, label: 'Age-', fmt: (v) => `${v}m` },
+  fagx: { group: 'filter', path: 'screener.filters.maxAgeMinutes', step: 720, min: 720, max: 43200, label: 'Age+', fmt: (v) => `${(v / 60).toFixed(0)}h` },
+  fhld: { group: 'filter', path: 'screener.filters.minHolders', step: 50, min: 0, max: 10000, label: 'Hold', fmt: (v) => `${v}` },
+  ftx:  { group: 'filter', path: 'screener.filters.minSwaps24h', step: 50, min: 0, max: 10000, label: 'Tx', fmt: (v) => `${v}` },
+  frug: { group: 'filter', path: 'screener.filters.maxRugRatio', step: 0.1, min: 0, max: 1, label: 'Rug', fmt: (v) => `${(v * 100).toFixed(0)}%` },
+  ft10: { group: 'filter', path: 'screener.filters.maxTop10HolderRate', step: 0.05, min: 0, max: 1, label: 'Top10', fmt: (v) => `${(v * 100).toFixed(0)}%` },
 };
 
 function menuText(view, deps) {
@@ -55,6 +56,15 @@ function menuKeyboard(view = 'main', deps) {
     rows.push([
       { text: `${mark(!deps.isPaused())}▶️ auto-buy on`, callback_data: 'm:auto:on' },
       { text: `${mark(deps.isPaused())}⏸ off`, callback_data: 'm:auto:off' },
+    ]);
+  }
+
+  if (view === 'filter') {
+    const currentSection = getPath('screener.section');
+    rows.push([
+      { text: `${currentSection === 'new_creation' ? '🟢 ' : ''}New`, callback_data: 'm:section:new_creation' },
+      { text: `${currentSection === 'near_completion' ? '🟢 ' : ''}Almost`, callback_data: 'm:section:near_completion' },
+      { text: `${currentSection === 'completed' ? '🟢 ' : ''}Migrated`, callback_data: 'm:section:completed' },
     ]);
   }
 
@@ -153,9 +163,9 @@ export async function handleMenuCallback(q, data, bot, deps) {
       switchMode(arg);
       deps.applyMode();
       return editMenu('main', `Mode → ${arg}`);
-    case 'auto':
-      deps.setPaused(arg === 'off');
-      return editMenu('main', arg === 'off' ? 'Auto-buy paused' : 'Auto-buy active');
+    case 'section':
+      setPath('screener.section', arg);
+      return editMenu('filter', `Section → ${arg}`);
     case 'inc':
     case 'dec': {
       const m = MENU_NUM[arg];

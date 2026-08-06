@@ -3,7 +3,7 @@ import { getConfig, getActiveMode } from '../config.js';
 import { tokenPairs, bestPair, normalizePair, search } from '../screener/dexscreener.js';
 import { tokenSecurity } from '../screener/goplus.js';
 import { fmtUsd, tokenLink } from '../utils.js';
-import { marketLine, communityLine } from './fmt.js';
+import { marketLine, communityLine, gmgnLine } from './fmt.js';
 import { createLogger } from '../logger.js';
 import { buildRegistry } from './commands/index.js';
 import { handleMenuCallback } from './commands/config.js';
@@ -141,15 +141,17 @@ export class Telegram {
 
   /** kartu info token utk lookup CA / hasil pencarian nama */
   _tokenCard(c) {
-    const guardTag = (c.priceChange?.h1 ?? 0) > 150 || (c.priceChange?.h24 ?? 0) > 400 ? '\n⚠️ *pumping right now — entry guard active*' : '';
+    const gmgn = gmgnLine(c);
     return (
-      `${tokenLink(c.symbol, this._chainSlug(c.chain), c.address)} — ${c.name || ''}${guardTag}\n\n` +
+      `${tokenLink(c.symbol, this._chainSlug(c.chain), c.address)} — ${c.name || ''}\n\n` +
       `💵 ${fmtUsd(c.priceUsd)} · ${marketLine(c)}\n` +
       `${communityLine(c, { withDelta: true })}\n` +
       `🔁 tx24 ${c.traders24h} · b/s ${c.buySellRatio?.toFixed(2)}` +
       (c.security?.top10Pct != null ? ` · top10 ${c.security.top10Pct.toFixed(0)}%` : '') + `\n` +
+      (gmgn ? `${gmgn}\n` : '') +
+      (c.launchpad ? `🚀 ${c.launchpad}\n` : '') +
       (c.security
-        ? `🛡 ${c.security.honeypot ? '🚨 honeypot/freezable' : '✅ safe'}${c.security.mintable ? ' · ⚠️ mintable' : ''}\n`
+        ? `🛡 ${c.security.honeypot ? '🚨 honeypot/freezable' : '✅ safe'}${c.security.washTrading ? ' · 🚨 wash trading' : ''}\n`
         : '') +
       `\`${c.address}\``
     );

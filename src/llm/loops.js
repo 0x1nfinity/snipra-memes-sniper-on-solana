@@ -32,7 +32,8 @@ export function createBotContext(deps) {
       `Stats: ${s.totalTrades} trades, win rate ${s.winRatePct.toFixed(1)}%, avg PnL ${s.avgPnlPct.toFixed(1)}%\n` +
       `Last trades: ${lastTrades}\n` +
       `Darwin: generation ${st.generation}, best genome ${st.genomes[0]?.id} (fitness ${st.genomes[0]?.fitness.toFixed(2)})\n` +
-      `Main filters: ${JSON.stringify(cfg.screener.filters)}\n` +
+      `Section: ${cfg.screener.section || 'new_creation'} · Source: ${cfg.screener.source || 'gmgn'}\n` +
+      `Filters: ${JSON.stringify(cfg.screener.filters)}\n` +
       `TP ladder: ${JSON.stringify(cfg.tpLadder)} | trailing: activate ${cfg.trailing.activateGainPct}%, trail ${cfg.trailing.trailPct}% | SL ${cfg.trading.stopLossPct}%`
     );
   };

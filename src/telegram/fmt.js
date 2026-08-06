@@ -33,6 +33,17 @@ export function communityLine(c, { withDelta = false } = {}) {
   return line;
 }
 
+/** baris metrik GMGN: progress, smart money, KOL, rug risk */
+export function gmgnLine(c) {
+  const parts = [];
+  if (c.bondingProgress != null) parts.push(`Progress ${(c.bondingProgress * 100).toFixed(0)}%`);
+  if (c.smartDegenCount > 0) parts.push(`Smart ${c.smartDegenCount}`);
+  if (c.renownedCount > 0) parts.push(`KOL ${c.renownedCount}`);
+  if (c.botDegenCount > 0) parts.push(`Bots ${c.botDegenCount}`);
+  if (c.rugRatio != null && c.rugRatio > 0.3) parts.push(`Rug ${(c.rugRatio * 100).toFixed(0)}%`);
+  return parts.join(' · ') || null;
+}
+
 /** baris verdict LLM: LLM conf 0.7 risk med — alasan (LLM = gate buy/skip, bukan sizer) */
 export function llmLine(c) {
   const v = c.llmVerdict;
