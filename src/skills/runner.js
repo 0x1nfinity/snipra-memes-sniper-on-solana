@@ -126,8 +126,18 @@ async function main() {
     clearInterval(_stopCommandQueue);
     stopStatusLoop();
     positionManager.stop();
-    await telegram.stopPolling();
-    setTimeout(() => process.exit(0), 500);
+    try { await telegram.stopPolling(); } catch (e) { log.warn('telegram stopPolling error:', e.message); }
+    // Grace period for in-flight DB writes, log flushes, trade confirmations
+    const GRACE_MS = 10_000;
+    const forceExit = setTimeout(() => {
+      log.warn(`shutdown: forced exit after ${GRACE_MS}ms grace period`);
+      process.exit(0);
+    }, GRACE_MS);
+    // Allow event loop to drain, then exit cleanly
+    forceExit.unref();
+    await new Promise((r) => setTimeout(r, 500));
+    clearTimeout(forceExit);
+    process.exit(0);
   }
 
   process.on('SIGINT', () => shutdown('SIGINT'));
@@ -148,10 +158,10 @@ async function main() {
     if (timersChanged) restartLoops();
   });
 
-  screeningCycle();
-
-  // Signal readiness to platform agent
+  // Signal readiness to platform agent BEFORE first screening cycle
   process.stdout.write(JSON.stringify({ type: 'ready', version: '2.0.0' }) + '\n');
+
+  screeningCycle();
 }
 
 // Only execute main() when this file is the direct entry point.

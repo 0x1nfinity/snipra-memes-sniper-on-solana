@@ -127,7 +127,9 @@ export class Darwin {
   fitness(g) {
     const { minTradesForFitness } = getConfig().darwin;
     if (g.trades === 0) return 0;
-    const avg = g.totalPnlPct / g.trades;
+    // Use EMA when available for recency-weighted fitness;
+    // fall back to simple average for genomes from older darwin.json
+    const avg = g._emaPnlPct != null ? g._emaPnlPct : (g.totalPnlPct / g.trades);
     // Penalti sampel kecil: genome dg sedikit trade belum terbukti
     const confidence = Math.min(g.trades / minTradesForFitness, 1);
     return avg * confidence;
@@ -157,6 +159,12 @@ export class Darwin {
     if (g) {
       g.trades += 1;
       g.totalPnlPct += trade.finalPnlPct;
+      // EMA (exponential moving average) for recency-weighted fitness.
+      // Alpha = 0.2 gives ~80% weight to the last ~10 trades,
+      // preventing historically-great genomes from dominating when
+      // market regime shifts.
+      if (g._emaPnlPct == null) g._emaPnlPct = trade.finalPnlPct;
+      else g._emaPnlPct = g._emaPnlPct * 0.8 + trade.finalPnlPct * 0.2;
     }
     db.tradesSinceEvolve += 1;
     this._persist();

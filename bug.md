@@ -1,5 +1,6 @@
 # Bug Report — Snipra v2
 
+> **48 total · 46 fixed · 3 open (B1,B2,B4 — platform-level, cannot fix in code)**
 > Format: `[SEVERITY] [SUBSYSTEM] Description`
 > Severity: 🔴Critical 🟠High 🟡Medium 🟢Low
 > Status: ✅Fixed ⬜Open 🔧InProgress
@@ -61,7 +62,7 @@ These files were committed on a DIFFERENT branch (skill-agent-control plan Tasks
 
 Lines 146-154 list `command-queue.js`, `skill-command.js`, and `skill-status.js` in the architecture diagram, but these files don't exist on `main`. The architecture description is inaccurate for the current branch state.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — skill-agent-control branch merged to main; all referenced files now exist
 **Found by:** Audit
 
 ### B8 🟡 [CONFIG] .env.example has confusing dual GMGN variables
@@ -89,7 +90,7 @@ Balance check `balance < amountNative` doesn't account for `gasFee`. A user with
 
 `GAS_RESERVE = { solana: 0.01 }` is used with `.solana` directly at line 90 instead of `[chainKey]`. Adding another chain would bypass the gas reserve check.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — line 90 already uses GAS_RESERVE[chainKey] with bracket notation; fallback to 0.01 for unknown chains
 **Found by:** Audit (agent trade subsystem)
 
 ### B11 🟠 [TRADE] buyToken accepts onTradeClosed but never calls it
@@ -108,17 +109,12 @@ Balance check `balance < amountNative` doesn't account for `gasFee`. A user with
 **Status:** ✅Fixed
 **Found by:** Audit (agent trade subsystem)
 
-**Status:** ⬜Open
-**Found by:** Audit (agent trade subsystem)
-
 ### B13 🟡 [TRADE] PaperChain tokenBalance always returns decimals:0
 **File:** `src/trade/paper.js:64`
 
 `tokenBalance` hardcodes `decimals: 0`, ignoring actual token decimals from DexScreener. Both `raw` and `ui` fields get the same value, so UI consumers get incorrect display amounts.
 
 **Status:** ✅Fixed — fetches decimals from DexScreener with in-memory cache, computes proper raw amount
-
-**Status:** ⬜Open
 **Found by:** Audit (agent trade subsystem)
 
 ### B14 🟡 [TRADE] Circuit breaker auto-recovery after COOLDOWN_MS works, but recordClose resets early
@@ -186,10 +182,8 @@ GMGN-specific risk filters (rugRatio, bundlerRate, insiderRate, top10HolderRate,
 
 `normalizeGmgnToken` sets `priceUsd: 0` and all `priceChange` fields to 0. If `enrichPrice` fails (key exhausted, network error), candidates proceed with zero price data. preScorer momentum check and score() price change bonuses silently evaluate to 0, potentially penalizing good tokens.
 
-**Status:** ⬜Open
-**Found by:** Audit (agent screener)
-
-### B22 🟡 [SCREENER] GoPlus treats freeze authority as honeypot
+**Status:** ✅Fixed — priceUsd/priceNative/priceChange default to null instead of 0; pre-scorer skips candidates with null price
+**Found by:** Audit (agent screener) 🟡 [SCREENER] GoPlus treats freeze authority as honeypot
 **File:** `src/screener/goplus.js:50`
 
 `authorityActive(d.freezable)` treats ANY token with active freeze authority as a honeypot. This incorrectly flags legitimate tokens (e.g., USDC) as honeypots, causing `blockHoneypot` to reject them.
@@ -303,7 +297,7 @@ Properties `_volPct`, `_tickDropPct`, `_priceSource`, `_slPending` were set dire
 
 Historical best genome may not be optimal if market regime shifts. Epsilon-greedy helps exploration, but the "best genome" shown to users can stagnate.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — EMA (exponential moving average, α=0.2) per genome in recordTrade; fitness() uses EMA when available for recency-weighted scoring; fallback to simple average for old darwin.json
 **Found by:** Audit (agent position/chains/darwin)
 
 ---
@@ -359,7 +353,7 @@ If any other file imports runner.js (even for testing), it will: call `loadConfi
 
 `setTimeout(() => process.exit(0), 500)` after awaiting `telegram.stopPolling()`. If stop takes longer, the process is killed mid-cleanup. In-flight DB writes, trade confirmations, log flushes are abruptly terminated.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — graceful shutdown: 10s grace period with unref'd force-exit timer, 500ms drain before clean exit; stopPolling wrapped in try/catch
 **Found by:** Audit (agent skills/GMGN)
 
 ### B41 🟡 [SKILL] Initial screeningCycle called BEFORE readiness signal
@@ -367,7 +361,7 @@ If any other file imports runner.js (even for testing), it will: call `loadConfi
 
 First screening cycle fires before `{"type":"ready"}` is written to stdout. If screening takes a long time, the agent doesn't know the bot is ready.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — screeningCycle moved to AFTER ready signal; platform agent now knows bot is ready before first scan runs
 **Found by:** Audit (agent skills/GMGN)
 
 ---
@@ -399,7 +393,7 @@ Two nearly identical catch blocks in `loadConfig()`. The second has broken inden
 
 Two simultaneous callers both miss the cache and make duplicate API calls. Wasteful but not harmful.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — in-flight promise map deduplicates concurrent callers; first caller populates cache, waiters share the same promise, cleaned up in finally
 **Found by:** Audit (agent core)
 
 ### B45 🟡 [UTIL] dynamicStopLossPercent ignores baseSlPercent when vol data exists
@@ -407,7 +401,7 @@ Two simultaneous callers both miss the cache and make duplicate API calls. Waste
 
 The `baseSlPercent` (user's configured stopLossPct) is completely ignored when volatility data is present. The SL is replaced by the volatility calculation. Config docs say "baseline is not treated as hard limit" but actual behavior is stronger: baseline is completely replaced.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — 50/50 blend between baseSlPercent and dynamic vol-based SL; user preference always has influence; tests updated for new values
 **Found by:** Audit (agent core)
 
 ### B46 🟡 [UTIL] sanitizePromptField misses RTL override and tab injection vectors
@@ -415,7 +409,7 @@ The `baseSlPercent` (user's configured stopLossPct) is completely ignored when v
 
 Only strips `[\r\n]+`. Does NOT strip tab characters, Unicode bidirectional override characters (U+202E, U+2066-U+2069), zero-width characters, or backticks. Potential prompt injection vectors remain.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — now strips: tab→space, backtick→quote, zero-width chars (U+200B–U+200D), Bidi override (U+202A–U+202E), Bidi isolate (U+2066–U+2069), BOM (U+FEFF); verified via manual test
 **Found by:** Audit (agent core)
 
 ---

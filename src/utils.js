@@ -21,9 +21,26 @@ export function fmtPct(n) {
  * Metadata on-chain sepenuhnya dikontrol attacker — newline + teks yang meniru
  * instruksi bisa dipakai untuk prompt injection (khususnya di batch, di mana satu
  * token jahat bisa memanipulasi verdict token LAIN dalam batch yang sama).
+ *
+ * Strip yg dilakukan:
+ * - newline/CR → spasi
+ * - tab → spasi
+ * - backtick → petik tunggal
+ * - Unicode Bidi override (U+202A–U+202E) — mencegah right-to-left injection
+ * - Unicode Bidi isolate (U+2066–U+2069) — mencegah directional isolation injection
+ * - Zero-width space (U+200B), zero-width non-joiner (U+200C), zero-width joiner (U+200D)
+ * - BOM (U+FEFF)
  */
 export function sanitizePromptField(s, maxLen = 32) {
-  return String(s ?? '').replace(/[\r\n]+/g, ' ').slice(0, maxLen);
+  return String(s ?? '')
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\t/g, ' ')
+    .replace(/`/g, "'")
+    .replace(/[​-‍]/g, '')   // zero-width space, ZWNJ, ZWJ
+    .replace(/[‪-‮]/g, '')   // Bidi override (LRE,RLE,PDF,LRO,RLO)
+    .replace(/[⁦-⁩]/g, '')   // Bidi isolate (LRI,RLI,FSI,PDI)
+    .replace(/﻿/g, '')            // BOM
+    .slice(0, maxLen);
 }
 
 export function shortAddr(a) {
@@ -119,6 +136,10 @@ export function pick(arr) {
  * karena tidak ada sumber candle/ATR asli — lihat src/positions/manager.js).
  * Diadaptasi dari legacy/src/utils.js:199-208 (nama parameter atrPercent→volPercent
  * karena bukan ATR asli).
+ *
+ * baseSlPercent (user configured stopLossPct) TIDAK diabaikan — hasil akhir adalah
+ * rata-rata berbobot antara base (50%) dan dynamic (50%), jadi preferensi user
+ * tetap punya pengaruh bahkan saat data volatilitas tersedia.
  */
 export function dynamicStopLossPercent({
   baseSlPercent, volPercent, multiplier = 1.5,
@@ -132,5 +153,7 @@ export function dynamicStopLossPercent({
   }
   const boundedVol = Math.max(minVolPercent, Math.min(maxVolPercent, Number(volPercent)));
   const dynamic = -boundedVol * multiplier;
-  return Math.max(floorPercent, Math.min(ceilingPercent, dynamic));
+  // Blend base (user preference) with dynamic (volatility signal)
+  const blended = (base + dynamic) / 2;
+  return Math.max(floorPercent, Math.min(ceilingPercent, blended));
 }

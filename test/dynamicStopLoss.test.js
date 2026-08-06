@@ -15,15 +15,19 @@ test('base outside [floor, ceiling] gets clamped even without volPercent', () =>
 });
 
 test('widens the stop when volatility is high, narrows when low', () => {
-  const wide = dynamicStopLossPercent({ baseSlPercent: -35, volPercent: 30, ...DEFAULTS }); // 30*1.5=-45
-  const narrow = dynamicStopLossPercent({ baseSlPercent: -35, volPercent: 5, ...DEFAULTS });  // 5*1.5=-7.5 -> clamped to ceiling -10
-  assert.equal(wide, -45);
-  assert.equal(narrow, -10);
+  // baseSlPercent = -35, volPercent = 30: bounded=30, dynamic=-45, blend=(-35+-45)/2=-40
+  // baseSlPercent = -35, volPercent = 5:  bounded=5,  dynamic=-7.5, blend=(-35+-7.5)/2=-21.25
+  // Both now reflect 50/50 blend between user baseline and volatility signal
+  const wide = dynamicStopLossPercent({ baseSlPercent: -35, volPercent: 30, ...DEFAULTS });
+  const narrow = dynamicStopLossPercent({ baseSlPercent: -35, volPercent: 5, ...DEFAULTS });
+  assert.equal(wide, -40);
+  assert.equal(narrow, -21.25);
 });
 
 test('volPercent is clamped to [minVolPercent, maxVolPercent] before applying the multiplier', () => {
-  const extreme = dynamicStopLossPercent({ baseSlPercent: -35, volPercent: 999, ...DEFAULTS }); // clamped to 40*1.5=-60 -> floor -55
-  assert.equal(extreme, -55);
+  // volPercent=999 → bounded=40 (clamped), dynamic=-60, blend=(-35+-60)/2=-47.5
+  const extreme = dynamicStopLossPercent({ baseSlPercent: -35, volPercent: 999, ...DEFAULTS });
+  assert.equal(extreme, -47.5);
 });
 
 // dynamicSl.enabled defaults to false (opt-in), dan _applyRules() memakai pola
