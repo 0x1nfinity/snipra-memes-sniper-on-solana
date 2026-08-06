@@ -156,7 +156,14 @@ export class PositionManager {
         const staleMs = (cfg.monitor.stalePriceWarnSec ?? 600) * 1000;
         for (const p of list) {
           const { price, liqUsd, h1 } = priceOf(p);
-          if (Number.isFinite(h1)) p._volPct = Math.abs(h1);
+          if (Number.isFinite(h1)) {
+            p._volPct = Math.abs(h1);
+            p._volPctAt = Date.now();
+          } else if (p._volPctAt && Date.now() - p._volPctAt > 30 * 60 * 1000) {
+            // h1 data stale > 30 min — reset, fall back to base SL without widening
+            p._volPct = undefined;
+            p._volPctAt = undefined;
+          }
           const dexPriceUsable = price > 0 && !(liqUsd > 0 && liqUsd < minLiq);
           if (!dexPriceUsable) {
             try {

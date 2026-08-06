@@ -196,8 +196,15 @@ export function closePosition(pos, { reason, receivedNative, txid }) {
   // PnL final pakai SOL riil, bukan mark harga oracle — swap eksekusi (slippage,
   // price impact, fee) sering meleset jauh dari harga poll terakhir.
   const pnl = realizedPnlPct(pos);
+  // Strip _-prefixed runtime properties (e.g., _volPct, _tickDropPct, _priceSource,
+  // _slPending, _confirmPending) from persisted trade records. These are transient
+  // internal state that should not leak into the permanent trade history.
+  const clean = {};
+  for (const [k, v] of Object.entries(pos)) {
+    if (!k.startsWith('_')) clean[k] = v;
+  }
   const trade = {
-    ...pos,
+    ...clean,
     closedAt: Date.now(),
     closeReason: reason,
     closeTx: txid,

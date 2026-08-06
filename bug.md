@@ -274,15 +274,16 @@ Retry loop retries on ALL errors: network failures, timeouts, AND 400/401/403/40
 
 If DexScreener stops returning `priceChange.h1` for a token, `_volPct` retains its stale value from the last successful refresh. Stale volatility feeds into `dynamicStopLossPercent` indefinitely.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — _volPctAt timestamp tracked; cleared after 30min stale → falls back to base SL
 **Found by:** Audit (agent position/chains/darwin)
 
 ### B32 🟡 [POSITION] Ad-hoc runtime properties leak into persisted trade records
 **File:** `src/positions/manager.js` + `state.js`
 
-Properties `_volPct`, `_tickDropPct`, `_priceSource`, `_slPending` are set directly on position objects during refresh/rule-application and leak into persisted trade snapshots when `closePosition` spreads the position object.
+Properties `_volPct`, `_tickDropPct`, `_priceSource`, `_slPending` were set directly on position objects during refresh/rule-application and leaked into persisted trade snapshots when `closePosition` spread the position object.
 
-**Status:** ⬜Open
+**Status:** ✅Fixed — closePosition now strips all _-prefixed runtime keys before building the trade record
+**Found by:** Audit (agent position/chains/darwin)
 **Found by:** Audit (agent position/chains/darwin)
 
 ---
