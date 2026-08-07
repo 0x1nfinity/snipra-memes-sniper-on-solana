@@ -4,6 +4,7 @@ import { tokenSecurity } from './goplus.js';
 import { evaluate, score } from './filters.js';
 import { preScore, PRE_SCORE_THRESHOLD } from './preScorer.js';
 import { checkDecisionCache, storeDecisionCache, pruneExpiredDecisionCache } from '../db.js';
+import { openPositions } from '../positions/state.js';
 import { mapLimit, fetchJson } from '../utils.js';
 import { createLogger } from '../logger.js';
 import { discoverFromGmgn } from './gmgn-discovery.js';
@@ -177,9 +178,10 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
       const sec = await tokenSecurity(cfg.chains[c.chain], c.address);
       if (sec) {
         c.security = sec;
-        c.holders = sec.holders;
-        c.top10Pct = sec.top10Pct;
-        c.top10HolderRate = sec.top10HolderRate;
+        // Jangan timpa data GMGN dengan null — GoPlus kadang tidak punya holder_count
+        if (sec.holders != null) c.holders = sec.holders;
+        if (sec.top10Pct != null) c.top10Pct = sec.top10Pct;
+        if (sec.top10HolderRate != null) c.top10HolderRate = sec.top10HolderRate;
       }
     });
 
@@ -192,6 +194,12 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
   }
 
   // === Common post-filter pipeline ===
+
+  // Filter token yang sudah di-hold — jangan buang LLM analysis / buy attempt
+  const heldAddrs = new Set(openPositions().map((p) => p.address.toLowerCase()));
+  const before = candidates.length;
+  candidates = candidates.filter((c) => !heldAddrs.has(c.address.toLowerCase()));
+  if (candidates.length < before) log.info(`${before - candidates.length} already-held tokens filtered out`);
 
   // Decision cache
   if (cfg.llm.enabled && cfg.llm.decisionCacheEnabled) {

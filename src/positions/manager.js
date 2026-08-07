@@ -144,7 +144,7 @@ export class PositionManager {
           const mine = pairs
             .filter((x) => x?.baseToken?.address?.toLowerCase() === p.address.toLowerCase())
             .sort((a, b) => (b?.liquidity?.usd || 0) - (a?.liquidity?.usd || 0));
-          const pair = mine.find((x) => x.pairAddress === p.pairAddress) || mine[0];
+          const pair = mine[0]; // pair paling likuid — konsisten dengan bestPair() di eksekusi trade
           return {
             price: Number(pair?.priceUsd),
             liqUsd: Number(pair?.liquidity?.usd) || 0,
