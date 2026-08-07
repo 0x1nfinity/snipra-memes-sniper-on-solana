@@ -2,8 +2,6 @@ import { getConfig, getActiveMode } from '../config.js';
 import { SolanaChain } from '../chains/solana.js';
 import { PaperChain } from './paper.js';
 import { nativePriceUsd } from '../prices.js';
-import { deleteTrades, recentTrades } from '../db.js';
-import { resetStats } from '../positions/state.js';
 import { createLogger } from '../logger.js';
 
 const log = createLogger('executor');
@@ -105,18 +103,13 @@ export class Executor {
   }
 
   /**
-   * Reset penuh lingkungan paper:
+   * Reset lingkungan paper tanpa hapus riwayat:
    *  1. Tutup semua posisi paper terbuka
-   *  2. Derive lessons dari riwayat trade paper (via LLM) sebelum data dihapus
-   *  3. Reset saldo tiap paper wallet → startBalance
-   *  4. Nolkan realized PnL (akumulator stats in-memory + hapus trade paper dari DB)
-   *  5. Reset unrealized PnL (posisi sudah ditutup di langkah 1)
-   * @param {object} opts.llm — instance LLM (opsional; lessons dilewati bila tidak ada)
-   * @param {object} opts.positionManager — untuk closeAllPositions
-   * @param {function} opts.notify — fungsi kirim notif ke Telegram
+   *  2. Reset saldo tiap paper wallet → startBalance
+   * Riwayat trade & stats TIDAK dihapus.
    */
   async paperReset({ llm, positionManager, notify } = {}) {
-    // 1. Tutup semua posisi terbuka (termasuk moonbag tidak ada mekanisme close massal)
+    // 1. Tutup semua posisi terbuka
     let closedCount = 0;
     const { openPositions } = await import('../positions/state.js');
     const openList = [...openPositions()];
@@ -127,36 +120,14 @@ export class Executor {
       log.info(`paper reset: ${closedCount}/${openList.length} positions closed`);
     }
 
-    // 2. Derive lessons strategis dari riwayat sebelum data dihapus
-    let lessonsDerived = 0;
-    if (llm?.available()) {
-      try {
-        const trades = recentTrades('paper', 50);
-        if (trades.length > 0) {
-          const existingLessons = llm.getLessons(20);
-          const derived = await llm.deriveResetLessons(trades, existingLessons);
-          lessonsDerived = derived.length;
-        }
-      } catch (e) {
-        log.warn('paperReset: LLM derive lessons failed, lanjut tanpa lessons:', e.message);
-      }
-    }
-
-    // 3. Reset saldo paper wallet
+    // 2. Reset saldo paper wallet ke startBalance
     const balances = {};
     for (const [key, c] of this.chains.entries()) {
       if (c instanceof PaperChain) balances[key] = await c.resetWallet();
     }
 
-    // 4. Nolkan stats + riwayat close in-memory
-    resetStats();
-
-    // 5. Hapus realized PnL paper dari DB
-    const tradesDeleted = deleteTrades('paper');
-
-    log.info(`paper reset: balance + realized PnL zeroed, ${tradesDeleted} paper trades deleted` +
-      (lessonsDerived ? `, ${lessonsDerived} lessons saved` : ''));
-    return { balances, tradesDeleted, closedCount, lessonsDerived };
+    log.info(`paper reset: ${closedCount} positions closed, balance reset — history kept`);
+    return { balances, closedCount };
   }
 
   async balances() {
