@@ -45,7 +45,7 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
   if (cfg.trading.buyFreshnessCheck) {
     const fresh = await resolveCandidate(chainKey, c.address);
     const res = evaluate(fresh, cfg.screener.filters);
-    if (!res.pass) throw new Error(`freshness recheck failed: ${res.reasons.join(', ')}`);
+    if (!res.pass) throw new Error('freshness recheck failed');
     Object.assign(c, fresh);
   }
 

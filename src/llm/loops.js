@@ -93,12 +93,25 @@ export function createScreeningCycle(deps) {
             lines.push(`   ${marketLine(c)}, ${communityLine(c)}`);
             lines.push('');
           }
-          // Rejected reason summary — grouped biar user tahu kenapa
+          // Rejected reason summary — grouped by category
           if (rejected.length > 0) {
+            const CATEGORIES = [
+              [/freshness recheck failed/, 'freshness recheck'],
+              [/position already open/, 'already have position'],
+              [/still in cooldown/, 'cooldown'],
+              [/max positions/, 'max positions reached'],
+              [/not found on DexScreener/, 'token not on DexScreener'],
+              [/unknown chain/, 'chain disabled'],
+              [/circuit breaker/, 'circuit breaker'],
+            ];
             const counts = {};
             for (const r of rejected) {
-              const reason = r.reason || 'unknown';
-              counts[reason] = (counts[reason] || 0) + 1;
+              const msg = r.reason || 'unknown';
+              let cat = msg; // fallback: raw message
+              for (const [re, label] of CATEGORIES) {
+                if (re.test(msg)) { cat = label; break; }
+              }
+              counts[cat] = (counts[cat] || 0) + 1;
             }
             const summary = Object.entries(counts)
               .sort((a, b) => b[1] - a[1])
