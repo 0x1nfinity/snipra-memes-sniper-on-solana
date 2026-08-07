@@ -139,14 +139,9 @@ async function fetchTrenches(apiKey, section, filters, launchpads, limit) {
   if (res.code !== 0) {
     throw new Error(`GMGN API error [${section}]: code=${res.code} message=${res.message || res.error || 'unknown'}`);
   }
-  // Log response structure for debugging section name issues
-  log.info(`GMGN ${section}: response code=${res.code}, data keys=[${Object.keys(res.data || {}).join(', ')}]`);
   const tokens = res.data?.[section];
   if (!Array.isArray(tokens)) {
-    const keys = Object.keys(res.data || {});
-    const sample = {};
-    for (const k of keys) { const v = res.data[k]; sample[k] = Array.isArray(v) ? `array[${v.length}]` : typeof v; }
-    log.warn(`GMGN ${section}: not found in response (keys: ${keys.join(', ') || 'none'}, sample: ${JSON.stringify(sample)}) — treating as empty`);
+    log.warn(`GMGN ${section}: no tokens array in response (data keys: ${Object.keys(res.data || {}).join(', ') || 'none'}), treating as empty`);
     return [];
   }
   return tokens;

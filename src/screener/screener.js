@@ -104,12 +104,16 @@ async function enrichPrice(candidate) {
 export async function runScreening({ darwin, llm, availSlots } = {}) {
   const cfg = getConfig();
 
-  let filters = { ...cfg.screener.filters };
+  // Base filters = config user (sebelum genome tightening).
+  // Genome hanya tighten client-side — server-side filter harus tetap
+  // pakai base config agar tidak terlalu ketat & kill semua hasil GMGN.
+  const baseFilters = { ...cfg.screener.filters };
+  let filters = baseFilters;
   let genomeId = null;
   let exitGenes = null;
   if (cfg.darwin.enabled && darwin) {
     const g = darwin.pickGenome();
-    filters = mergeGenome(cfg.screener.filters, g.genes);
+    filters = mergeGenome(baseFilters, g.genes);
     genomeId = g.id;
     exitGenes = resolveExitGenome(cfg, g.genes);
   }
@@ -122,10 +126,12 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
   let candidates = [];
 
   // === Primary: GMGN ===
+  // Server-side pakai baseFilters (bukan genome-tightened) — genome
+  // tightening terlalu agresif bisa bikin GMGN return kosong.
   if (cfg.screener.source === 'gmgn' && apiKeys.length > 0) {
     const result = await discoverFromGmgn({
       section,
-      filters,
+      filters: baseFilters,
       launchpads,
       apiKeys,
       limit,

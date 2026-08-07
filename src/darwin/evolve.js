@@ -122,8 +122,8 @@ export function onTradeClosed(trade) {
   const { darwin, llm, getConfig } = _deps;
   const cfg = getConfig();
   if (cfg.darwin.enabled) {
-    const due = darwin.recordTrade(trade);
-    if (due) runEvolve('auto').catch((e) => log.error('auto-evolve failed:', e.message));
+    darwin.recordTrade(trade); // tetap catat untuk fitness tracking
+    // Auto-evolve disabled — genome hanya berubah via /evolve manual
   }
   if (cfg.llm.enabled && llm && llm.available()) {
     llm.recordTradeLesson(trade).catch(() => {});
