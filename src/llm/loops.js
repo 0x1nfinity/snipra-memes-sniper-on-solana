@@ -93,8 +93,20 @@ export function createScreeningCycle(deps) {
             lines.push(`   ${marketLine(c)}, ${communityLine(c)}`);
             lines.push('');
           }
-          // Rejected tokens TIDAK dinotifikasi satu per satu — hanya ringkasan
-          // di header yg menyebut jumlah rejected.
+          // Rejected reason summary — grouped biar user tahu kenapa
+          if (rejected.length > 0) {
+            const counts = {};
+            for (const r of rejected) {
+              const reason = r.reason || 'unknown';
+              counts[reason] = (counts[reason] || 0) + 1;
+            }
+            const summary = Object.entries(counts)
+              .sort((a, b) => b[1] - a[1])
+              .map(([reason, count]) => `${count}× ${reason}`)
+              .join(', ');
+            lines.push(`Rejected: ${summary}`);
+            lines.push('');
+          }
           if (bought.length > 0) {
             const chainsBought = [...new Set(bought.map((b) => b.c.chain))];
             const saldoLines = await Promise.all(chainsBought.map(async (ck) => {
