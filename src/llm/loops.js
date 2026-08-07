@@ -70,11 +70,22 @@ export function createScreeningCycle(deps) {
       });
       const bought = [];
       const rejected = [];
+      const BUY_DELAY_MS = 20000; // 20s antar buy — circuit breaker max 3/min
       for (const c of candidates) {
+        // Cek slot tersisa — berhenti kalau penuh
+        const remaining = effMax - openPositions().length;
+        if (remaining <= 0) {
+          rejected.push({ c, reason: 'max positions reached' });
+          continue;
+        }
         c.genomeId = genomeId;
         try {
           const pos = await buyToken(c.chain, c.address, undefined, 'screener', c);
           bought.push({ c, pos });
+          // Delay antar buy agar tidak trip circuit breaker (max 3/min)
+          if (openPositions().length < effMax) {
+            await new Promise((r) => setTimeout(r, BUY_DELAY_MS));
+          }
         } catch (e) {
           rejected.push({ c, reason: e.message });
           log.debug(`skip buy ${c.symbol}: ${e.message}`);
