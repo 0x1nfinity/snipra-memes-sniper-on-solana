@@ -133,13 +133,19 @@ export class PaperChain {
     if (held <= 0) throw new Error(`holdings paper ${tokenAddress.slice(0, 8)} = 0`);
     const tokens = held * (Math.min(pct, 100) / 100);
 
-    let price = await this._tryPriceNative(tokenAddress);
-    if (price == null) {
-      if (pairInfo.fallbackPriceUsd > 0) {
-        const px = await nativePriceUsd(this.key);
-        price = pairInfo.fallbackPriceUsd / px;
-        log.warn(`[${this.key}] live price ${tokenAddress.slice(0, 8)} unavailable — using last known price ($${pairInfo.fallbackPriceUsd})`);
-      } else {
+    // Pakai harga USD dari monitoring (fallbackPriceUsd) bila tersedia —
+    // konversi ke native via SOL/USD rate. Ini memastikan harga eksekusi
+    // KONSISTEN dengan harga yang dipakai trigger (trailing/TP/SL).
+    // _tryPriceNative fetch terpisah bisa return harga dari pair berbeda
+    // atau priceNative yg tidak sinkron dengan priceUsd, menyebabkan
+    // realized PnL tidak match dengan pergerakan harga yg terlihat.
+    let price;
+    if (pairInfo.fallbackPriceUsd > 0) {
+      const px = await nativePriceUsd(this.key);
+      price = pairInfo.fallbackPriceUsd / px;
+    } else {
+      price = await this._tryPriceNative(tokenAddress);
+      if (price == null) {
         price = 0;
         log.warn(`[${this.key}] ${tokenAddress.slice(0, 8)} illiquid & no fallback — treated as rug, close @ 0`);
       }
