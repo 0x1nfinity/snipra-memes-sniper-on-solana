@@ -78,6 +78,12 @@ export function createScreeningCycle(deps) {
           rejected.push({ c, reason: 'max positions reached' });
           continue;
         }
+        // Skip token tanpa harga — GMGN & DexScreener blm terindeks
+        if (!(c.priceUsd > 0)) {
+          rejected.push({ c, reason: 'no price data' });
+          log.debug(`skip buy ${c.symbol}: no price data`);
+          continue;
+        }
         c.genomeId = genomeId;
         try {
           const pos = await buyToken(c.chain, c.address, undefined, 'screener', c);

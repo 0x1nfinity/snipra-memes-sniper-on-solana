@@ -59,7 +59,7 @@ export function tokenLink(symbol, gmgnSlug, address) {
 }
 
 export function pnlPct(entry, current) {
-  if (!entry || !current) return 0;
+  if (!entry || !current || entry <= 0) return 0;
   return ((current - entry) / entry) * 100;
 }
 

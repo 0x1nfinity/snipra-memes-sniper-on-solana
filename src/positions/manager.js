@@ -321,7 +321,7 @@ export class PositionManager {
           const postTp = pos.tpHit.length > 0;
           const activateGainPct = pos.trailingActivateGainPct ?? tr.activateGainPct;
           const trailPct = pos.trailingTrailPct ?? tr.trailPct;
-          const peakGain = ((pos.peakPrice - pos.entryPrice) / pos.entryPrice) * 100;
+          const peakGain = pos.entryPrice > 0 ? ((pos.peakPrice - pos.entryPrice) / pos.entryPrice) * 100 : 0;
           if (!pos.trailingActive && (postTp || peakGain >= activateGainPct)) {
             pos.trailingActive = true;
             this.notify(
