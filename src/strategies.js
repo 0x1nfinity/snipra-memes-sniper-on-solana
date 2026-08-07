@@ -1,8 +1,8 @@
 /**
  * Strategy presets — pre-configured filter profiles for different trading styles.
  *
- * Each preset ONLY overrides screener.filters.* fields that GMGN can actually
- * provide. Management variables (TP, SL, trailing, position size, LLM settings,
+ * Each preset overrides screener.filters + screener.section + screener.source.
+ * Management variables (TP, SL, trailing, position size, LLM settings,
  * max positions, max hold) stay in the config file and are NEVER touched here.
  *
  * Strategy "myself" = full config.json control, no overrides.
@@ -21,8 +21,15 @@ const FIELD_MAP = {
   trending_max_bundler_rate: 'maxBundlerRate',
 };
 
-// Strategy preset values — only the 9 screening filter fields above.
-// All other config (trading, trailing, LLM, monitor, etc.) comes from the config file.
+// GMGN section per strategy — section menentukan pool token yang di-scan
+const SECTION = {
+  sniper: 'new_creation',       // token baru, fresh launch
+  degen: 'new_creation',        // ultra-aggressive early entries
+  wait_for_dip: 'completed',    // token sudah established, cari yang turun
+  smart_money: 'completed',     // established token dengan holder kuat
+};
+
+// Strategy preset values.
 export const PRESETS = {
   sniper: {
     // Low-cap gems just created, highest risk/reward
@@ -75,12 +82,13 @@ export const PRESETS = {
 };
 
 /**
- * Apply a strategy preset's filter overrides on top of a deep-cloned config.
- * Only screener.filters.* fields are touched — everything else stays as-is.
+ * Apply a strategy preset's overrides on top of a config clone.
+ * Overrides: screener.filters, screener.section, screener.source
+ * Everything else stays as-is from config file.
  *
  * @param {object} config — fully merged config (DEFAULTS + JSON files)
  * @param {string} strategyName — "myself" | "sniper" | "wait_for_dip" | "smart_money" | "degen"
- * @returns {object} new config (shallow clone, filters replaced)
+ * @returns {object} new config (shallow clone)
  */
 export function applyStrategy(config, strategyName) {
   if (!strategyName || strategyName === 'myself') return config;
@@ -88,12 +96,14 @@ export function applyStrategy(config, strategyName) {
   const preset = PRESETS[strategyName];
   if (!preset) return config;
 
-  // Shallow clone + replace filters with a new object
+  // Shallow clone + replace screener with new objects
   const merged = {
     ...config,
     screener: {
       ...config.screener,
       filters: { ...config.screener.filters },
+      section: SECTION[strategyName] || config.screener.section,
+      source: 'gmgn',  // strategi non-myself selalu pakai GMGN
     },
   };
 
