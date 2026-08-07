@@ -223,17 +223,21 @@ let config = null;
 let configWatcher = null;
 let watchedFiles = [];
 
-// live-config.json = sumber tunggal untuk semua pengaturan umum (screener, llm,
-// trailing, dll). paper-config.json HANYA boleh override field-field berikut;
-// selebihnya selalu ikut live-config.json walau sedang mode paper.
+// live-config.json = sumber utama (screener, llm, trailing, dll).
+// paper-config.json = override untuk paper.* + trading.* (semua trading
+// parameters bisa beda paper vs live tanpa edit live-config).
 function isPaperOverridePath(pathStr) {
   return (
     pathStr === 'paper' ||
     pathStr.startsWith('paper.') ||
-    pathStr === 'trading.maxPositions' ||
-    pathStr === 'trading.buyAmount' ||
-    pathStr === 'trading.paperGas' ||
-    pathStr.startsWith('trading.paperGas.')
+    pathStr === 'trading' ||
+    pathStr.startsWith('trading.') ||
+    pathStr === 'tpLadder' ||
+    pathStr.startsWith('tpLadder.') ||
+    pathStr === 'trailing' ||
+    pathStr.startsWith('trailing.') ||
+    pathStr === 'monitor' ||
+    pathStr.startsWith('monitor.')
   );
 }
 

@@ -5,14 +5,19 @@
 //   2. Strip out the comment lines (JSON does not support comments —
 //      this template uses them for documentation only; the real
 //      paper-config.json must be valid JSON).
-//   3. Adjust values, or leave as-is — the bot auto-creates
-//      paper-config.json with these same defaults on first run if
-//      it doesn't exist.
+//   3. Adjust values, or leave as-is.
 //
-// paper-config.json ONLY overrides the fields below on top of
-// live-config.json while running in paper mode. Every other setting
-// (screener, llm, trailing, etc.) always follows live-config.json,
-// even in paper mode — edit that file for anything not listed here.
+// Fields you can override (semua ini akan override live-config.json
+// saat mode paper, tanpa perlu edit live-config.json):
+//   paper.*    — paper simulation settings
+//   trading.*  — semua trading parameters (buyAmount, maxPositions,
+//                stopLossPct, slippageBps, cooldown, dll)
+//   tpLadder.* — take-profit ladder
+//   trailing.* — trailing stop settings
+//   monitor.*  — monitoring interval & thresholds
+//
+// Fields TIDAK bisa di-override di sini (selalu ikut live-config.json):
+//   screener.*, llm.*, telegram.*, darwin.*, chains.*, strategy
 {
   "paper": {
     // Starting virtual balance per chain, in native SOL.
@@ -21,13 +26,45 @@
     }
   },
   "trading": {
-    // Paper mode can safely run more/smaller concurrent positions
-    // than live — override maxPositions and buyAmount here.
-    "maxPositions": 2,
-    "buyAmount": 0.04,
-    // Simulated gas cost per swap in paper mode (native SOL, per chain).
+    // Posisi & sizing — bisa lebih agresif di paper
+    "maxPositions": 3,
+    "buyAmount": 0.03,
+    // Risk management
+    "stopLossPct": -35,
+    "slippageBps": 300,
+    // Cooldown
+    "cooldownMinutes": 240,
+    "maxTradesBeforeCooldown": 3,
+    // Time-based exit (0 = disabled)
+    "maxHoldMinutes": 0,
+    "sidewaysTimeoutMinutes": 0,
+    "sidewaysPnlBandPct": 2,
+    // Buy guards
+    "buyFreshnessCheck": true,
+    "buyMaxRetries": 2,
+    "buyRetryDelayMs": 2000,
+    // Price validation
+    "priceMinLiquidityUsd": 300,
+    "priceAnomalySpikePct": 500,
+    "slFlashDropPct": 40,
+    // Simulated gas cost per swap in paper mode (native SOL, per chain)
     "paperGas": {
       "solana": 0.000005
     }
+  },
+  "tpLadder": [
+    { "gainPct": 100, "sellPct": 55 },
+    { "gainPct": 250, "sellPct": 35 }
+  ],
+  "trailing": {
+    "enabled": true,
+    "activateGainPct": 10,
+    "trailPct": 5,
+    "moonbagPct": 10
+  },
+  "monitor": {
+    "intervalSec": 20,
+    "stalePriceWarnSec": 600,
+    "onchainReconcileSec": 60
   }
 }
