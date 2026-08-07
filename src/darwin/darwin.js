@@ -168,7 +168,9 @@ export class Darwin {
     }
     db.tradesSinceEvolve += 1;
     this._persist();
-    return db.tradesSinceEvolve >= getConfig().darwin.evolveEveryNTrades;
+    const every = getConfig().darwin.evolveEveryNTrades;
+    if (!every || every <= 0) return false; // 0/null = auto-evolve disabled
+    return db.tradesSinceEvolve >= every;
   }
 
   /** Reset penghitung kuota evolve (dipanggil setelah usulan dikirim). */
