@@ -140,9 +140,11 @@
     "onchainReconcileSec": 60
   },
   "darwin": {
+    // Darwin tetap tracking fitness genome, tapi auto-evolve DISABLED.
+    // Gunakan /evolve manual untuk melihat usulan — user yg memutuskan.
     "enabled": true,
     "populationSize": 8,
-    "evolveEveryNTrades": 20,
+    "evolveEveryNTrades": 0,
     "mutationRate": 0.35,
     // Chance of using a non-best genome during screening (exploration).
     "exploreRate": 0.25,

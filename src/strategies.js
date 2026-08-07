@@ -30,9 +30,12 @@ const SECTION = {
 };
 
 // Strategy preset values.
+// launchpads: null = semua launchpad (no filter) — dipakai sniper/degen
+//             utk new_creation karena token baru bisa dari mana saja.
 export const PRESETS = {
   sniper: {
     // Low-cap gems just created, highest risk/reward
+    launchpads: null,                       // semua launchpad
     min_mcap_usd: 7000,
     max_mcap_usd: 200000,
     token_age_max_ms: 3_600_000,          // 60 min max age
@@ -69,6 +72,7 @@ export const PRESETS = {
   },
   degen: {
     // Ultra-aggressive, widest risk tolerances
+    launchpads: null,                       // semua launchpad
     min_mcap_usd: 5000,
     max_mcap_usd: 100000,
     token_age_max_ms: 3_600_000,           // 60 min max age
@@ -108,6 +112,11 @@ export function applyStrategy(config, strategyName) {
   };
 
   for (const [stratField, value] of Object.entries(preset)) {
+    // launchpads: null = clear filter (all launchpads allowed)
+    if (stratField === 'launchpads') {
+      merged.screener.filters.launchpads = value;
+      continue;
+    }
     const configKey = FIELD_MAP[stratField];
     if (!configKey) continue;
 
