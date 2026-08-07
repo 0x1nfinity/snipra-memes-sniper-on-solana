@@ -1,5 +1,6 @@
 import { openPositions } from '../../positions/state.js';
 import { tokenLink, fmtPct, fmtUsd, shortAddr } from '../../utils.js';
+import { nativePriceUsd } from '../../prices.js';
 
 export async function buy(args, msg, deps) {
   if (args.length < 1) return deps.send('Usage: /buy <address> [amount]');
@@ -7,8 +8,9 @@ export async function buy(args, msg, deps) {
   const [address, amount] = args;
   const pos = await deps.buyToken(chain, address, amount ? Number(amount) : undefined, 'manual');
   const saldo = await deps.executor.chain(chain).nativeBalance().catch(() => null);
+  const px = await nativePriceUsd(chain);
   return deps.send(
-    `✅ BUY ${tokenLink(pos.symbol, deps.chainSlug(chain), pos.address)} @ ${fmtUsd(pos.entryPrice)}` +
+    `✅ BUY ${tokenLink(pos.symbol, deps.chainSlug(chain), pos.address)} @ ${fmtUsd((pos.entryPrice || 0) * px)}` +
     (saldo != null ? `\nBalance: ${saldo.toFixed(4)} SOL` : '')
   );
 }

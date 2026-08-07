@@ -75,7 +75,7 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
     symbol: c.symbol,
     pairAddress: c.pairAddress,
     labels: c.labels,
-    entryPrice: c.priceUsd,
+    entryPrice: c.priceNative > 0 ? c.priceNative : c.priceUsd,
     amountNative: res.spentNative,
     tokensRaw: res.tokensRaw,
     txid: res.txid,

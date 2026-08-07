@@ -2,6 +2,7 @@ import { getConfig, getActiveMode } from '../../config.js';
 import { openPositions, moonbags, statsSummary, currentPnlPct, getState } from '../../positions/state.js';
 import { fmtUsd, fmtPct, tokenLink } from '../../utils.js';
 import { effectiveMax } from '../../trade/helpers.js';
+import { nativePriceUsd } from '../../prices.js';
 import { nativeSym, fmtHold } from '../fmt.js';
 
 export async function status(args, msg, deps) {
@@ -26,13 +27,18 @@ export async function status(args, msg, deps) {
     `🧬 Darwin ${cfg.darwin.enabled ? 'on' : 'off'}\n\n` +
     `*Balance${getActiveMode() === 'paper' ? ' (virtual)' : ''}*: ${lines.join(' · ')}`;
 
+  // Convert native → USD untuk display (pos.entryPrice & currentPrice sekarang native SOL)
+  const solUsd = await nativePriceUsd('solana');
+
   if (list.length > 0) {
     const items = list.map((p) => {
       const pnl = currentPnlPct(p);
-      const peak = ((p.peakPrice - p.entryPrice) / p.entryPrice) * 100;
+      const peak = p.entryPrice > 0 ? ((p.peakPrice - p.entryPrice) / p.entryPrice) * 100 : 0;
+      const entryUsd = (p.entryPrice || 0) * solUsd;
+      const curUsd = (p.currentPrice || 0) * solUsd;
       return (
         `${pnl >= 0 ? '🟢' : '🔴'} ${tokenLink(p.symbol, deps.chainSlug(p.chain), p.address)} *${fmtPct(pnl)}* · ⏱ ${fmtHold(p.openedAt)}\n` +
-        `   ${fmtUsd(p.entryPrice)} → ${fmtUsd(p.currentPrice)} · peak ${fmtPct(peak)}\n` +
+        `   ${fmtUsd(entryUsd)} → ${fmtUsd(curUsd)} · peak ${fmtPct(peak)}\n` +
         `   remaining ${p.remainingPct.toFixed(0)}% · TP ${p.tpHit.length} · trailing ${p.trailingActive ? 'on' : 'off'}`
       );
     });
@@ -42,9 +48,11 @@ export async function status(args, msg, deps) {
   if (moons.length > 0) {
     const moonLines = moons.map((m) => {
       const pnl = m.entryPrice > 0 ? ((m.currentPrice - m.entryPrice) / m.entryPrice) * 100 : 0;
+      const entryUsd = (m.entryPrice || 0) * solUsd;
+      const curUsd = (m.currentPrice || 0) * solUsd;
       return (
         `🌙 ${tokenLink(m.symbol, deps.chainSlug(m.chain), m.address)} *${fmtPct(pnl)}*\n` +
-        `   hold ${m.moonPct.toFixed(0)}% of original position · ${fmtUsd(m.entryPrice)} → ${fmtUsd(m.currentPrice)}`
+        `   hold ${m.moonPct.toFixed(0)}% of original position · ${fmtUsd(entryUsd)} → ${fmtUsd(curUsd)}`
       );
     });
     msgText += `\n\n━━ 🌙 *MOONBAG (${moons.length})* ━━\n\n${moonLines.join('\n\n')}`;

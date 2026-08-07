@@ -3,6 +3,7 @@ import { getConfig, getActiveMode } from '../config.js';
 import { tokenPairs, bestPair, normalizePair, search } from '../screener/dexscreener.js';
 import { tokenSecurity } from '../screener/goplus.js';
 import { fmtUsd, tokenLink } from '../utils.js';
+import { nativePriceUsd } from '../prices.js';
 import { marketLine, communityLine, gmgnLine } from './fmt.js';
 import { createLogger } from '../logger.js';
 import { buildRegistry } from './commands/index.js';
@@ -252,8 +253,9 @@ export class Telegram {
         await this.bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
           chat_id: q.message.chat.id, message_id: q.message.message_id,
         }).catch(() => {});
+        const solUsd = await nativePriceUsd(chain);
         await this._send(
-          `✅ BUY ${tokenLink(pos.symbol, this._chainSlug(chain), address)} @ ${fmtUsd(pos.entryPrice)}\ntx: \`${pos.txid}\``
+          `✅ BUY ${tokenLink(pos.symbol, this._chainSlug(chain), address)} @ ${fmtUsd((pos.entryPrice || 0) * solUsd)}\ntx: \`${pos.txid}\``
         );
       } catch (e) {
         await this._send(`⚠️ Buy failed: ${e.message}`);

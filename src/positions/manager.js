@@ -145,8 +145,13 @@ export class PositionManager {
             .filter((x) => x?.baseToken?.address?.toLowerCase() === p.address.toLowerCase())
             .sort((a, b) => (b?.liquidity?.usd || 0) - (a?.liquidity?.usd || 0));
           const pair = mine[0]; // pair paling likuid — konsisten dengan bestPair() di eksekusi trade
+          // Pakai priceNative sbg source of truth — konsisten dgn eksekusi trade
+          // yg juga pakai priceNative. priceUsd dari DexScreener sering tidak
+          // sinkron dgn priceNative (selisih 2-25x), menyebabkan trigger trailing/
+          // TP/SL nyala di harga phantom.
+          const priceNative = Number(pair?.priceNative);
           return {
-            price: Number(pair?.priceUsd),
+            price: priceNative > 0 ? priceNative : (Number(pair?.priceUsd) || 0),
             liqUsd: Number(pair?.liquidity?.usd) || 0,
             h1: Number(pair?.priceChange?.h1),
           };
@@ -171,22 +176,16 @@ export class PositionManager {
               if (typeof chain.quoteSellPriceUsd === 'function') {
                 const nativePx = await chain.quoteSellPriceUsd(p.address).catch(() => null);
                 if (nativePx > 0) {
-                  const solUsd = await nativePriceUsd(p.chain);
-                  const fallbackPrice = nativePx * solUsd;
-                  if (fallbackPrice > 0) {
-                    const prev = p.currentPrice;
-                    // Delta tick hanya bermakna bila SUMBER harga sama dengan tick lalu:
-                    // mid-price DexScreener vs quote jual Jupiter punya basis berbeda,
-                    // membandingkannya menghasilkan drop palsu yang memicu flash-drop/SL.
-                    const sameSource = p._priceSource === 'quote';
-                    if (updatePrice(p, fallbackPrice) && prev > 0 && sameSource) {
-                      p._tickDropPct = Math.max(0, ((prev - fallbackPrice) / prev) * 100);
-                    } else {
-                      p._tickDropPct = 0;
-                    }
-                    p._priceSource = 'quote';
-                    continue;
+                  // nativePx sudah dalam SOL/token — simpan langsung sbg native
+                  const prev = p.currentPrice;
+                  const sameSource = p._priceSource === 'quote';
+                  if (updatePrice(p, nativePx) && prev > 0 && sameSource) {
+                    p._tickDropPct = Math.max(0, ((prev - nativePx) / prev) * 100);
+                  } else {
+                    p._tickDropPct = 0;
                   }
+                  p._priceSource = 'quote';
+                  continue;
                 }
               }
             } catch (e) {
@@ -421,8 +420,11 @@ export class PositionManager {
   async _notifyClosed(pos, pnl, reason) {
     const emoji = pnl >= 0 ? '✅' : '🔻';
     const saldo = await this._saldo(pos.chain);
+    const px = await nativePriceUsd(pos.chain);
+    const entryUsd = (pos.entryPrice || 0) * px;
+    const exitUsd = (pos.currentPrice || 0) * px;
     this.notify(
-      `${emoji} Closed\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}\n${fmtUsd(pos.entryPrice)} → ${fmtUsd(pos.currentPrice)} · ${reason}\nBalance: ${saldo}`
+      `${emoji} Closed\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}\n${fmtUsd(entryUsd)} → ${fmtUsd(exitUsd)} · ${reason}\nBalance: ${saldo}`
     );
   }
 }
