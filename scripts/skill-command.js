@@ -5,8 +5,16 @@ import { commandQueueDir } from '../src/skills/command-queue.js';
 const [, , toolName, argsJson] = process.argv;
 
 if (!toolName) {
-  console.error('usage: node scripts/skill-command.js <tool_name> [json_args]');
-  console.error('tools: get_positions | screen_now | buy_token | sell_token | close_all_positions');
+  console.error('usage: node scripts/skill-command.js <name> [json_args]');
+  console.error('');
+  console.error('LLM tools (object args, e.g. \'{"chain":"solana","address":"..."}\'):');
+  console.error('  get_positions | screen_now | buy_token | sell_token | close_all_positions');
+  console.error('');
+  console.error('Bot commands (array args, e.g. \'["refresh"]\' or \'["trading.buyAmount","0.5"]\'):');
+  console.error('  pause | resume | mode | darwin | evolve | lessons | config | get | set |');
+  console.error('  status | stats | papertrades | paperreset | briefings | logs | gmgnactivity | stop');
+  console.error('');
+  console.error('Full docs: skills/snipra/SKILL.md');
   process.exit(1);
 }
 
