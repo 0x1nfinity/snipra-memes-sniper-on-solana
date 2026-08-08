@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/index.js",
   "license": "MIT",
-  "author": "ijal",
+  "author": "0x1nfinity",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/0xinfinity101/snipra-memes-sniper-on-solana.git"
