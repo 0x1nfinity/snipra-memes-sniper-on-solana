@@ -154,10 +154,12 @@ Prints a snapshot: mode, open positions + PnL, recent trades, Darwin genome stat
 
 Run:
 ```bash
-node scripts/skill-command.js <tool_name> '<json_args>'
+node scripts/skill-command.js <name> '<json_args>'
 ```
 
-Available tools:
+Two argument shapes, depending on which table below `<name>` is in:
+
+**LLM tools** — object args:
 
 | Tool | Args | Description |
 |------|------|--------------|
@@ -167,15 +169,44 @@ Available tools:
 | `sell_token` | `{"address":"...","pct":<optional 1-100, default 100>}` | Sell a position/moonbag |
 | `close_all_positions` | `{}` | Close every open position now |
 
+**Bot commands** — array args, positional (mirrors Telegram's `/command arg1 arg2`), same behavior as the equivalent Telegram command in standalone mode:
+
+| Command | Args | Description |
+|---------|------|-------------|
+| `pause` | `[]` | Stop auto-buy (monitoring keeps running) |
+| `resume` | `[]` | Resume auto-buy |
+| `mode` | `["paper"\|"live"]` | Switch trading mode |
+| `darwin` | `[]` | Genome evolution status |
+| `evolve` | `[]` | Force evolution + LLM analysis (proposal only, not auto-applied) |
+| `lessons` | `[]` or `["refresh"]` | View recent lessons, or re-analyze all closed trades (paper+live) into new strategic lessons |
+| `config` | `[]` | Full configuration dump |
+| `get` | `["<path>"]` | Read one config value, e.g. `["trading.buyAmount"]` |
+| `set` | `["<path>","<value>"]` | Change a config value, e.g. `["trading.buyAmount","0.5"]` |
+| `status` | `[]` | Positions, balance, mode, PnL snapshot |
+| `stats` | `[]` | Win rate, avg PnL, last 5 trades |
+| `papertrades` | `[]` | Paper trade history from the database |
+| `paperreset` | `[]` | Reset virtual paper balance (keeps trade history) |
+| `briefings` | `[]` | Trigger the daily briefing now |
+| `logs` | `[]` | Recent bot log tail |
+| `gmgnactivity` | `["<limit>"]` (optional, default 5) | Debug: raw GMGN wallet_activity response |
+| `stop` | `[]` | Shut down the bot process |
+
+Not available in skill mode (Telegram-UI-only, or already covered above): `menu`, `start`, `help`. Also not needed as separate commands: `buy`/`sell`/`closeall`/`screen` — use the LLM tools table above instead.
+
 The command blocks up to 30s and prints the result as JSON. Two different things can mean "the action didn't do what you wanted" — check both:
 - Top-level `"ok":false` — the command queue itself failed (an unexpected exception, or "no response from snipra after 30s — is it running?" if the runner process isn't up).
-- Top-level `"ok":true` but `"result":{"error":"..."}` — the tool ran fine but rejected the request for a normal reason (e.g. `buy_token` with an unrecognized chain returns `{"error":"unknown chain"}` inside `result`, not a top-level failure). This is the same "return an error object instead of throwing" convention `LLM_TOOL_DEFS`'s tools have always used, not something specific to this CLI.
+- Top-level `"ok":true` but `"result":{"error":"..."}` — the command ran fine but rejected the request for a normal reason (e.g. `buy_token` with an unrecognized chain returns `{"error":"unknown chain"}` inside `result`, not a top-level failure; an unrecognized bot command name returns `{"error":"unknown command: <name>"}` the same way). This is the same "return an error object instead of throwing" convention both tables' commands use.
+- Bot commands return their result as `"result":{"text":"..."}` — this is the exact text a Telegram user would have seen from the same command in standalone mode.
 
 Relay the outcome to the user in your own words; do not paste raw JSON at them.
 
 Example: user says "buy token ABC on solana" → run
 `node scripts/skill-command.js buy_token '{"chain":"solana","address":"ABC..."}'`
 → report back what happened.
+
+Example: user says "how's Darwin doing, any new lessons?" → run
+`node scripts/skill-command.js darwin '[]'` and `node scripts/skill-command.js lessons '[]'`
+→ summarize both results.
 
 ---
 
