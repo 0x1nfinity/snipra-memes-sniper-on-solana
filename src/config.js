@@ -154,7 +154,7 @@ export const DEFAULTS = {
   // tetap global di sini.
   darwin: {
     populationSize: 8,
-    evolveEveryNTrades: 20,
+    evolveEveryNTrades: 0,
     mutationRate: 0.35,
     exploreRate: 0.25, // peluang memakai genome non-terbaik saat screening
     minTradesForFitness: 3,

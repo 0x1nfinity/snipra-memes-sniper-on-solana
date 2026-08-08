@@ -10,59 +10,32 @@
 //   4. If you skip this step entirely, the bot auto-creates
 //      live-config.json with these same defaults on first run.
 //
-// live-config.json is the single source of truth for ALL settings
-// (screener, trading, llm, trailing, etc). paper-config.json only
-// overrides a few paper-mode-specific fields on top of this file.
+// live-config.json holds ALL management settings (trading, TP/SL, trailing,
+// LLM tuning, Darwin tuning, telegram, monitor). It does NOT hold screener
+// filters, GMGN section, llm.enabled, or darwin.enabled/autoEvolve — those
+// are strategy-owned and live in strategy.json (copy strategy.example.json
+// to get started), selected via the `strategy` field below.
+// paper-config.json only overrides a few paper-mode-specific fields on top
+// of this file.
 {
-  // Trading strategy preset — overrides screener.filters.* with a hardcoded
-  // profile. Management settings (TP, SL, trailing, position size, LLM) stay
-  // in this file and are NEVER touched by the preset.
-  // Options: "myself" (full manual control) | "sniper" | "wait_for_dip" | "smart_money" | "degen"
+  // Trading strategy preset — selects screener.filters, screener.section,
+  // llm.enabled and darwin.enabled/autoEvolve from strategy.json. Management
+  // settings in the rest of THIS file (TP, SL, trailing, position size, LLM/
+  // Darwin tuning) are NEVER touched by the preset.
+  // Built-in keys in strategy.example.json: "myself" (full manual control) |
+  // "sniper" | "wait_for_dip" | "smart_money" | "degen" — add your own by
+  // adding a new top-level key to strategy.json.
   "strategy": "myself",
   "screener": {
     // Max new candidates evaluated per screening cycle.
     "maxCandidatesPerCycle": 3,
-    // GMGN trench section: 'new_creation' | 'completed' | 'pump'
-    "section": "new_creation",
-    "filters": {
-      // Whitelist launchpads (e.g. ["Pump.fun"]). [] or null = all launchpads.
-      "launchpads": ["Pump.fun"],
-      // ===== Volume & Liquidity =====
-      "minVolume24h": 50000,
-      "maxVolume24h": null,
-      "minLiquidity": 20000,
-      "maxLiquidity": null,
-      // ===== Market Cap =====
-      "minMarketCap": 100000,
-      "maxMarketCap": 20000000,
-      // ===== Holders & Activity =====
-      "minHolders": 200,
-      "maxHolders": null,
-      "minSwaps24h": 300,
-      "maxSwaps24h": null,
-      // ===== Age (minutes) =====
-      "minAgeMinutes": 30,
-      "maxAgeMinutes": 10080,
-      // ===== Bonding Curve Progress (0-100%) =====
-      "minProgress": 0,
-      "maxProgress": 100,
-      // ===== GMGN Risk Metrics =====
-      "maxRugRatio": 0.3,
-      "maxBundlerRate": 0.3,
-      "maxInsiderRate": 0.3,
-      "minTotalFee": null,
-      "maxTotalFee": null,
-      "maxBotDegenRate": null,
-      "maxTop10HolderRate": null,
-      "maxDevHoldRate": null,
-      "minSmartDegenCount": null,
-      "maxFreshWalletRate": null,
-      // ===== Security =====
-      "blockHoneypot": true,
-      "blockWashTrading": true
-    },
+    // Discovery source: 'gmgn' | 'dexscreener'. Note: the active strategy
+    // currently always forces this to 'gmgn' when the config is built —
+    // DexScreener only kicks in automatically as a fallback when GMGN
+    // returns zero candidates for a cycle.
+    "source": "gmgn",
     // Free rule-based gate before the LLM (src/screener/preScorer.js) — only takes
-    // effect when llm.enabled is true (a no-op otherwise).
+    // effect when llm.enabled (from strategy.json) is true (a no-op otherwise).
     "preScoreEnabled": true
   },
   "trading": {
@@ -140,10 +113,13 @@
     "onchainReconcileSec": 60
   },
   "darwin": {
-    // Darwin tetap tracking fitness genome, tapi auto-evolve DISABLED.
-    // Gunakan /evolve manual untuk melihat usulan — user yg memutuskan.
-    "enabled": true,
+    // Whether Darwin is enabled at all, and whether it auto-evolves, are
+    // strategy-owned — set darwinEnabled / autoEvolve per strategy in
+    // strategy.json, not here. Everything below is global tuning that
+    // applies whenever the active strategy has darwinEnabled: true.
     "populationSize": 8,
+    // 0 = auto-evolve stays off even if the strategy enables Darwin; use
+    // /evolve manually to see proposals — you decide when to apply them.
     "evolveEveryNTrades": 0,
     "mutationRate": 0.35,
     // Chance of using a non-best genome during screening (exploration).
@@ -151,8 +127,10 @@
     "minTradesForFitness": 3
   },
   "llm": {
-    // Enable via `/set llm.enabled true` once you've set an API key.
-    "enabled": false,
+    // Whether the LLM gate runs at all is strategy-owned (llmEnabled in
+    // strategy.json) — set it there once you've configured an API key.
+    // Everything below is global LLM tuning that applies whenever the
+    // active strategy has llmEnabled: true.
     "provider": "openrouter",
     "model": "deepseek/deepseek-chat-v3-0324",
     // LLM only GATES buy/skip — it never sizes positions (always trading.buyAmount).

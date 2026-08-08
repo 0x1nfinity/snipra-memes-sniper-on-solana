@@ -34,6 +34,7 @@ The bot runs as a long-lived process communicating via stdin/stdout JSON protoco
 | **Multi-key GMGN** | Comma-separated API keys in `.env` — sequential fallback on failure |
 | **Pre-scorer Gate** | Free rule-based scoring before the LLM (reduces LLM costs) |
 | **20+ Hard Filters** | Volume, liquidity, market cap, holders, swaps, age, bonding progress, rug ratio, bundler rate, insider rate, top-10 concentration, bot/degen rate, fresh wallet rate, dev hold rate, smart degen count, total fees, honeypot block, wash trading block, launchpad whitelist |
+| **Price Recheck Retry** | Retries a candidate's native price a few times before rejecting it for "no price data" — covers DexScreener's brand-new-pair indexing lag |
 
 ### Trading & Execution
 | Feature | Description |
@@ -71,7 +72,8 @@ The bot runs as a long-lived process communicating via stdin/stdout JSON protoco
 | **Decision Cache** | Skip verdicts cached per token (TTL 30 min) — avoids re-asking about stale rejects |
 | **Cheap Model Option** | Separate cheaper model for batch gate vs main model for chat |
 | **Lessons System** | Post-trade lesson extraction → injected into future prompts |
-| **Derive Lessons** | Batch lesson extraction from all closed trades (paper reset) |
+| **Entry Snapshot** | Captures market conditions (liquidity, MC, age, holders, risk metrics, etc.) at buy time, stored per-trade for later analysis |
+| **Derive Lessons** | Batch lesson extraction from all closed trades — `/lessons refresh` (Telegram) or `derive_lessons` (skill mode), or automatically on paper reset |
 | **Gene Suggestions** | LLM analyzes genome data → proposes filter changes (manual review, not auto-applied) |
 | **Chat with Tools** | Natural language chat → LLM calls tools: screen, buy, sell, close all, get positions |
 
@@ -130,6 +132,7 @@ cp .env.example .env
 # 3. (Optional) Copy config templates
 cp live-config.example.json live-config.json
 cp paper-config.example.json paper-config.json
+cp strategy.example.json strategy.json
 # The bot auto-creates these with defaults if skipped
 
 # 4. Run (paper mode first — ALWAYS paper test before live!)
@@ -164,43 +167,46 @@ npm run skill-dev    # Skill mode, paper trading
 
 ## Strategy Presets
 
-Four hardcoded filter profiles for different trading styles. Set via `strategy` in `live-config.json` or `/set strategy <name>`.
+Five built-in filter profiles for different trading styles, defined in `strategy.json` (copy `strategy.example.json` to get started — the bot auto-creates it with these defaults if you skip that). Set the active one via `strategy` in `live-config.json` or `/set strategy <name>`.
 
 | Preset | Style | Key Traits |
 |--------|-------|------------|
-| `myself` | Full manual | Use config values as-is, no overrides |
+| `myself` | Full manual | Loosest general-purpose filters, tune to taste |
 | `sniper` | Ultra-fast | Low MC (7K-200K), max age 60min, loose risk |
 | `wait_for_dip` | Patient | Mid MC (25K-500K), max age 24h, moderate risk |
 | `smart_money` | Conservative | Higher holders (1K+), tight top-10 cap (50%), strict risk |
 | `degen` | Maximum risk | Lowest MC (5K-100K), max age 60min, loose everything |
 
-**Strategy presets ONLY override `screener.filters.*`** — all management settings (TP, SL, trailing, position size, LLM config, max positions, max hold) stay in your config file and are never touched.
+**Strategy presets override `screener.filters.*`, `screener.section`, `llm.enabled`, and `darwin.enabled`/`autoEvolve`** — wholesale, from `strategy.json`, on every config build. All other management settings (TP, SL, trailing, position size, LLM/Darwin tuning, max positions, max hold) stay in `live-config.json` and are never touched by the preset. Add your own preset by adding a new top-level key to `strategy.json`.
 
 ## Configuration
 
-All settings live in two **local, git-ignored** JSON files at the project root:
+All settings live in three **local, git-ignored** JSON files at the project root:
 
-- **`live-config.json`** — single source of truth for everything (strategy, screener, trading, llm, trailing, darwin, telegram, monitor).
-- **`paper-config.json`** — overrides only paper-specific fields on top of `live-config.json` (`paper.startBalance`, `trading.maxPositions`, `trading.buyAmount`, `trading.paperGas`). Every other setting always follows `live-config.json`.
+- **`live-config.json`** — source of truth for all management settings (trading, TP/SL, trailing, LLM tuning, Darwin tuning, telegram, monitor) plus the active `strategy` name.
+- **`strategy.json`** — screener filters, GMGN section, `llm.enabled`, and `darwin.enabled`/`autoEvolve`, grouped per named strategy profile (see [Strategy Presets](#strategy-presets)). Whichever profile `live-config.json`'s `strategy` field points to is applied wholesale on every config build.
+- **`paper-config.json`** — overrides only paper-specific fields on top of `live-config.json` (`paper.startBalance`, `trading.maxPositions`, `trading.buyAmount`, `trading.paperGas`, and other `trading.*`/`tpLadder`/`trailing`/`monitor` fields). Every other setting always follows `live-config.json` + `strategy.json`.
 
 Templates with inline documentation ship in the repo:
 
 ```bash
-cp live-config.example.json live-config.json    # full template
+cp live-config.example.json live-config.json    # management settings template
 cp paper-config.example.json paper-config.json  # paper override template
+cp strategy.example.json strategy.json          # filter/section/llm/darwin profiles template
 ```
 
-**Strip the `//` comment lines** from your copies (JSON doesn't support comments; the templates use them for documentation only). The bot auto-creates both files with defaults on first run if you skip this step.
+**Strip the `//` comment lines** from your copies (JSON doesn't support comments; the templates use them for documentation only). The bot auto-creates all three files with defaults on first run if you skip this step.
 
-Edit values directly in the file, or change at runtime via Telegram `/set <path> <value>` (persists straight back to the file). Hot-reload: the bot watches both files and picks up changes without restart. Timer changes (screening interval, monitor interval) auto-restart their respective loops.
+Edit values directly in the file, or change at runtime via Telegram `/set <path> <value>` (persists straight back to the correct file — filter/section/llm.enabled/darwin.enabled paths route to `strategy.json` under the active strategy, everything else to `live-config.json` or `paper-config.json`). Hot-reload: the bot watches all three files and picks up changes without restart. Timer changes (screening interval, monitor interval) auto-restart their respective loops.
 
 ### Key Config Sections
 
+`live-config.json`:
+
 | Path | Default | Description |
 |------|---------|-------------|
-| `strategy` | `"myself"` | Strategy preset for filter overrides |
-| `screener.source` | `"gmgn"` | Discovery source: `gmgn` or `dexscreener` |
-| `screener.section` | `"new_creation"` | GMGN trench section |
+| `strategy` | `"myself"` | Active strategy profile (key into `strategy.json`) |
+| `screener.source` | `"gmgn"` | Discovery source: `gmgn` or `dexscreener` (currently always forced to `gmgn` by the active strategy; DexScreener is used as an automatic zero-candidate fallback) |
 | `screener.maxCandidatesPerCycle` | `3` | Max new tokens evaluated per cycle |
 | `trading.buyAmount` | `0.3` | Position size in SOL |
 | `trading.stopLossPct` | `-35` | Static stop-loss percentage |
@@ -210,12 +216,22 @@ Edit values directly in the file, or change at runtime via Telegram `/set <path>
 | `trailing.enabled` | `true` | Trailing stop active |
 | `trailing.activateGainPct` | `10` | Trailing activates after this % profit |
 | `trailing.trailPct` | `5` | Close when drops this % from peak |
-| `darwin.enabled` | `true` | Genome evolution active |
-| `llm.enabled` | `false` | LLM buy-gate active (needs API key) |
-| `llm.gateBuy` | `true` | LLM evaluates before buy |
+| `monitor.intervalSec` | `10` | Position monitor loop interval (seconds) |
+| `darwin.evolveEveryNTrades` | `0` | Auto-evolve every N trades (0=manual `/evolve` only) |
+| `llm.gateBuy` | `true` | LLM evaluates before buy (when strategy has `llmEnabled: true`) |
 | `llm.tools` | `true` | LLM can call bot tools in chat |
 | `telegram.screeningcyclemin` | `60` | Screening loop interval (minutes) |
 | `telegram.managecyclemin` | `30` | Status report interval (minutes) |
+
+`strategy.json` (per profile — see `strategy.example.json` for full defaults):
+
+| Path | Description |
+|------|-------------|
+| `<name>.section` | GMGN trench section: `new_creation` \| `completed` \| `pump` |
+| `<name>.llmEnabled` | LLM buy-gate active for this strategy (needs API key configured) |
+| `<name>.darwinEnabled` | Genome evolution active for this strategy |
+| `<name>.autoEvolve` | Auto-evolve without manual `/evolve` |
+| `<name>.filters.*` | Volume, liquidity, market cap, holders, age, risk metrics, etc. |
 
 ## Telegram Commands
 
@@ -252,6 +268,7 @@ Edit values directly in the file, or change at runtime via Telegram `/set <path>
 | `/darwin` | Genome evolution status |
 | `/evolve` | Force evolution + LLM analysis |
 | `/lessons` | Recent lessons from LLM |
+| `/lessons refresh` | Analyze paper+live trade history (incl. entry snapshots) → derive new strategic lessons |
 
 ### Paper Trading
 | Command | Description |

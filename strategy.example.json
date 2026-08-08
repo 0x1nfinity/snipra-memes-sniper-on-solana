@@ -1,3 +1,23 @@
+// strategy.example.json — TEMPLATE, not read by the bot.
+//
+// How to use:
+//   1. Copy this file to `strategy.json` in the project root.
+//   2. Strip out these `//` comment lines (JSON does not support comments —
+//      this template uses them for documentation only; the real
+//      strategy.json must be valid JSON).
+//   3. Edit an existing profile's `filters`/`section`/`llmEnabled`/
+//      `darwinEnabled`/`autoEvolve`, or add a new top-level key with its
+//      own profile — then point `strategy` in live-config.json at its name.
+//   4. If you skip this step entirely, the bot auto-creates strategy.json
+//      with these same 5 built-in profiles on first run.
+//
+// This is where screener.filters, screener.section, llm.enabled, and
+// darwin.enabled/autoEvolve now live (moved out of live-config.json).
+// Each profile is fully self-contained — applyStrategy() overwrites those
+// fields wholesale from whichever profile `strategy` (in live-config.json)
+// points to, on every config build. Everything else (TP/SL/trailing/
+// position size/LLM & Darwin tuning) stays in live-config.json and is
+// never touched here.
 {
   "myself": {
     "section": "completed",
