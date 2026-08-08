@@ -41,14 +41,13 @@ skills-lock.json
 # Backup files
 *.bak
 
-# Local spec document (Indonesian, gitignored)
+# Local spec/audit docs (Indonesian, internal-only — not for the public repo)
 SPEC.md
-bug.md
+docs/
 
 # Claude Code
 .claude/
 .superpowers/
-docs/superpowers/
 
 # Local strategy config — personal trading params, not for the repo.
 # Copy live-config.example.json / paper-config.example.json / strategy.example.json

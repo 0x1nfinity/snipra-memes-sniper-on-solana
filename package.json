@@ -4,6 +4,12 @@
   "description": "Solana memecoin sniper. Screening, swap Jupiter/GMGN, TP ladder, trailing profit, Telegram, Darwin evolution, LLM analysis.",
   "type": "module",
   "main": "src/index.js",
+  "license": "MIT",
+  "author": "ijal",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xinfinity101/snipra.git"
+  },
   "scripts": {
     "start": "node src/index.js",
     "dev": "SNIPRA_MODE=paper node src/index.js",
