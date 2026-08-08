@@ -4,7 +4,7 @@ import { recentTrades } from '../db.js';
 import { fmtUsd, tokenLink } from '../utils.js';
 import { marketLine, communityLine } from '../telegram/fmt.js';
 import { createLogger } from '../logger.js';
-import { runScreening } from '../screener/screener.js';
+import { runScreening, retryPriceNative } from '../screener/screener.js';
 import { effectiveMax } from '../trade/helpers.js';
 
 const log = createLogger('loops');
@@ -97,10 +97,17 @@ export function createScreeningCycle(deps) {
         // (trade/helpers.js) & source of truth monitoring (manager.js).
         // priceUsd bisa ada dari GMGN meski DexScreener blm terindeks —
         // itu tidak cukup, entryPrice butuh priceNative biar konsisten.
+        // Pair baru banget sering belum ke-index DexScreener saat enrichPrice()
+        // pertama — retry beberapa kali (re-fetch asli, bukan derive dari priceUsd)
+        // sebelum benar-benar menyerah, karena ini candidate yg sudah lolos semua
+        // filter & tinggal selangkah lagi dieksekusi.
         if (!(c.priceNative > 0)) {
-          rejected.push({ c, reason: 'no price data' });
-          log.debug(`skip buy ${c.symbol}: no priceNative`);
-          continue;
+          const recovered = await retryPriceNative(c);
+          if (!recovered) {
+            rejected.push({ c, reason: 'no price data' });
+            log.debug(`skip buy ${c.symbol}: no priceNative (retries exhausted)`);
+            continue;
+          }
         }
         c.genomeId = genomeId;
         try {

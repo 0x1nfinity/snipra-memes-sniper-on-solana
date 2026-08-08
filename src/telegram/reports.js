@@ -3,6 +3,7 @@ import { nativeSym, fmtHold, fmtNative } from './fmt.js';
 import { tokenLink, fmtPct, sleep } from '../utils.js';
 import { tradeStatsByChain, tradeStatsSince } from '../db.js';
 import { effectiveMax } from '../trade/helpers.js';
+import { getLastBriefingDate, setLastBriefingDate } from '../positions/state.js';
 import { createLogger } from '../logger.js';
 
 const log = createLogger('reports');
@@ -14,12 +15,12 @@ export function wibDateHour(nowMs = Date.now()) {
   return { dateStr: d.toISOString().slice(0, 10), hour: d.getUTCHours() };
 }
 
-let lastBriefingDate = null;
-
 export function consumeBriefingTrigger(nowMs = Date.now()) {
   const { dateStr, hour } = wibDateHour(nowMs);
-  const isBriefing = hour >= 7 && lastBriefingDate !== dateStr;
-  if (isBriefing) lastBriefingDate = dateStr;
+  // Dibaca dari state persisted (positions.<mode>.json), bukan variable in-memory —
+  // supaya restart bot tidak mereset "sudah terkirim hari ini" dan memicu briefing dobel.
+  const isBriefing = hour >= 7 && getLastBriefingDate() !== dateStr;
+  if (isBriefing) setLastBriefingDate(dateStr);
   return isBriefing;
 }
 

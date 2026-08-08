@@ -21,6 +21,7 @@ function freshState() {
     moonbags: [], // sisa alokasi hold jangka panjang (di luar slot maxPositions)
     cooldowns: {}, // `${chain}:${address}` → timestamp exit terakhir
     stats: { totalTrades: 0, wins: 0, losses: 0, totalPnlPct: 0 },
+    lastBriefingDate: null, // tanggal (WIB) terakhir daily briefing terkirim — persisted agar tidak resend tiap restart
   };
 }
 
@@ -126,7 +127,7 @@ function recordCooldown(chain, address, cooldownMinutes) {
   state.cooldowns[key] = { count: stillInWindow ? prev.count + 1 : 1, lastCloseAt: now };
 }
 
-export function addPosition({ chain, address, symbol, pairAddress, labels, entryPrice, amountNative, tokensRaw, txid, genomeId, llmVerdict, slPct, trailingActivateGainPct, trailingTrailPct }) {
+export function addPosition({ chain, address, symbol, pairAddress, labels, entryPrice, amountNative, tokensRaw, txid, genomeId, llmVerdict, slPct, trailingActivateGainPct, trailingTrailPct, entrySnapshot }) {
   const pos = {
     id: `${chain}-${address.slice(0, 8)}-${Date.now()}`,
     chain,
@@ -152,6 +153,10 @@ export function addPosition({ chain, address, symbol, pairAddress, labels, entry
     slPct: slPct ?? null,
     trailingActivateGainPct: trailingActivateGainPct ?? null,
     trailingTrailPct: trailingTrailPct ?? null,
+    // Snapshot kondisi market saat entry (liquidity, marketcap, age, holders, dst) —
+    // dipakai utk analisis & bikin filter screening berbasis data historis nanti,
+    // BUKAN dipakai runtime oleh rules apapun (murni data collection).
+    entrySnapshot: entrySnapshot || null,
   };
   state.open.push(pos);
   persist();
@@ -312,5 +317,14 @@ export function statsSummary() {
 export function resetStats() {
   state.stats = { totalTrades: 0, wins: 0, losses: 0, totalPnlPct: 0 };
   state.closed = [];
+  persist();
+}
+
+export function getLastBriefingDate() {
+  return state.lastBriefingDate;
+}
+
+export function setLastBriefingDate(dateStr) {
+  state.lastBriefingDate = dateStr;
   persist();
 }

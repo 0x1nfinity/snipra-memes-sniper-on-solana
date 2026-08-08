@@ -52,6 +52,7 @@ const HELP = `*snipra v2 — multi-chain meme sniper*
 /darwin — genome evolution status
 /evolve — force evolution now
 /lessons — lessons from the LLM
+/lessons refresh — analyze paper+live trade history → derive new strategic lessons
 /logs — recent logs
 
 *Without a command:*

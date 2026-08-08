@@ -33,7 +33,8 @@ export function initDb() {
       close_reason  TEXT,
       tp_hits       INTEGER,
       genome_id     TEXT,
-      llm_score     REAL
+      llm_score     REAL,
+      entry_snapshot TEXT                        -- JSON: liquidity/marketcap/age/holders dst saat entry
     );
     CREATE INDEX IF NOT EXISTS idx_trades_mode ON trades(mode, closed_at);
 
@@ -76,6 +77,13 @@ export function initDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_decision_cache_expires ON decision_cache(expires_at);
   `);
+  // Migrasi: tabel trades lama (dibuat sebelum entry_snapshot ditambahkan) tidak
+  // otomatis dapat kolom baru dari CREATE TABLE IF NOT EXISTS di atas.
+  const cols = db.prepare(`PRAGMA table_info(trades)`).all().map((c) => c.name);
+  if (!cols.includes('entry_snapshot')) {
+    db.exec(`ALTER TABLE trades ADD COLUMN entry_snapshot TEXT`);
+    log.info('migrated trades table: added entry_snapshot column');
+  }
   log.info('sqlite ready: data/snipra.db');
   return db;
 }
@@ -87,8 +95,8 @@ export function recordTradeDb(trade, mode) {
     .prepare(
       `INSERT INTO trades (position_id, mode, chain, address, symbol, entry_price, exit_price,
         pnl_pct, amount_native, realized_native, pnl_native, opened_at, closed_at, hold_minutes,
-        close_reason, tp_hits, genome_id, llm_score)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        close_reason, tp_hits, genome_id, llm_score, entry_snapshot)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       trade.id, mode, trade.chain, trade.address, trade.symbol,
@@ -97,7 +105,8 @@ export function recordTradeDb(trade, mode) {
       (trade.realizedNative ?? 0) - (trade.amountNative ?? 0),
       trade.openedAt, trade.closedAt, trade.holdMinutes,
       trade.closeReason, trade.tpHit?.length ?? 0, trade.genomeId,
-      trade.llmVerdict?.confidence ?? null
+      trade.llmVerdict?.confidence ?? null,
+      trade.entrySnapshot ? JSON.stringify(trade.entrySnapshot) : null
     );
 }
 

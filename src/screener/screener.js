@@ -5,7 +5,7 @@ import { evaluate, score } from './filters.js';
 import { preScore, PRE_SCORE_THRESHOLD } from './preScorer.js';
 import { checkDecisionCache, storeDecisionCache, pruneExpiredDecisionCache } from '../db.js';
 import { openPositions } from '../positions/state.js';
-import { mapLimit, fetchJson } from '../utils.js';
+import { mapLimit, fetchJson, sleep } from '../utils.js';
 import { createLogger } from '../logger.js';
 import { discoverFromGmgn } from './gmgn-discovery.js';
 import { normalizePair, bestPair, tokenPairs } from './dexscreener.js';
@@ -111,6 +111,37 @@ async function enrichPrice(candidate) {
     candidate.priceUsd = gmgnPriceUsd;
     candidate.priceChange = gmgnPriceChange;
   }
+}
+
+/**
+ * Retry DexScreener utk candidate yang sudah lolos semua filter tapi priceNative
+ * masih kosong (pair belum terindeks saat enrichPrice() pertama). TIDAK derive dari
+ * priceUsd — cuma re-fetch data asli dari market, kasih waktu DexScreener nge-index
+ * pool yang baru banget dibuat. Dipanggil sesaat sebelum buy, jadi cuma kena candidate
+ * yang benar-benar mau dieksekusi (bukan semua 80 kandidat mentah).
+ * @returns {Promise<boolean>} true kalau priceNative berhasil didapat.
+ */
+export async function retryPriceNative(candidate, { attempts = 3, delayMs = 3000 } = {}) {
+  for (let i = 0; i < attempts; i++) {
+    await sleep(delayMs);
+    try {
+      const pairs = await tokenPairs('solana', candidate.address);
+      const best = bestPair(pairs);
+      if (best) {
+        const norm = normalizePair(best, 'solana');
+        if (norm?.priceNative > 0) {
+          candidate.priceNative = norm.priceNative;
+          candidate.priceUsd = norm.priceUsd ?? candidate.priceUsd;
+          candidate.priceChange = norm.priceChange ?? candidate.priceChange;
+          log.info(`${candidate.symbol}: priceNative recovered on retry ${i + 1}/${attempts}`);
+          return true;
+        }
+      }
+    } catch (e) {
+      log.debug(`retryPriceNative ${candidate.symbol} attempt ${i + 1} failed: ${e.message}`);
+    }
+  }
+  return false;
 }
 
 /**

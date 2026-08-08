@@ -122,7 +122,10 @@ Reply ONLY JSON: {"verdicts":[{"index":<int>,"action":"buy"|"skip","confidence":
 
     // Budget output ikut jumlah kandidat — 700 (default single-candidate) bisa
     // memotong respons batch besar, dan JSON terpotong = seluruh batch gagal parse.
-    const maxTokens = Math.min(4000, 300 + 120 * candidates.length);
+    // Math.max(700, …): formula 300+120n turun DI BAWAH 700 utk batch kecil (1-3
+    // kandidat) — floor 700 mencegah budget batch kecil malah lebih sempit dari
+    // default single-candidate.
+    const maxTokens = Math.max(700, Math.min(4000, 300 + 120 * candidates.length));
     const content = await this._chat([{ role: 'user', content: prompt }], { model, maxTokens });
     const parsed = tryParseJson(content);
     return parseBatchVerdicts(parsed, candidates.length);
@@ -195,7 +198,11 @@ EXISTING LESSONS (carried forward, don't repeat them):
 ${lessonLines || '(none)'}
 
 Reply ONLY JSON: {"lessons":[{"text":"...","outcome":"WIN|LOSS|PATTERN"}, ...]}`;
-    const content = await this._chat([{ role: 'user', content: prompt }]);
+    // Default 700 sering habis oleh reasoning tokens model sebelum sempat keluarkan
+    // content (respons kosong) — apalagi dgn banyak trade di prompt. Naikkan seperti
+    // assessBatch, floor 1500 krn output lessons sendiri pendek tapi reasoning-nya besar.
+    const maxTokens = Math.max(1500, Math.min(4000, 500 + 15 * trades.length));
+    const content = await this._chat([{ role: 'user', content: prompt }], { maxTokens });
     const parsed = tryParseJson(content);
     const lessons = [];
     if (Array.isArray(parsed.lessons)) {
