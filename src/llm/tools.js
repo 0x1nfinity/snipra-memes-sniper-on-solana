@@ -62,6 +62,8 @@ export const LLM_TOOL_DEFS = [
   },
 ];
 
+export const LLM_TOOL_NAMES = new Set(LLM_TOOL_DEFS.map((d) => d.function.name));
+
 export function inferChain(address) {
   return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address) ? 'solana' : null;
 }

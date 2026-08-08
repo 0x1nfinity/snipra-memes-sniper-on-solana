@@ -31,16 +31,40 @@ export function sweepStaleCommandFiles(dir = commandQueueDir(), maxAgeMs = 60 * 
 }
 
 /**
+ * Decide which runner handles a queued command: the 5-tool LLM_TOOL_DEFS
+ * surface (get_positions/screen_now/buy_token/sell_token/close_all_positions
+ * — object-shaped args, shared with chat tool-calling) or the broader
+ * Telegram-command-registry surface via Telegram#runCommand (array-shaped
+ * positional args, mirrors `/command arg1 arg2`). Exported standalone so
+ * routing can be unit-tested without spinning up the real bot/DB stack.
+ */
+export async function routeCommand(name, args, { runLlmTool, runCommand, toolNames }) {
+  if (toolNames.has(name)) {
+    return runLlmTool(name, args && typeof args === 'object' && !Array.isArray(args) ? args : {});
+  }
+  return runCommand(name, Array.isArray(args) ? args : []);
+}
+
+/**
  * Polling folder inbox tiap intervalMs, eksekusi tiap .cmd.json lewat
- * runLlmTool, tulis .result.json. `.cmd.json` di-rename ke `.processing.json`
- * SEBELUM eksekusi (supaya tool yang lambat tidak ke-pickup dua kali oleh
- * tick berikutnya — file itu keluar dari glob `.cmd.json`), lalu dihapus
- * SETELAH `.result.json` berhasil ditulis — supaya ada jejak di disk kalau
- * proses crash di tengah eksekusi.
+ * routeCommand() (tool atau command Telegram), tulis .result.json. `.cmd.json`
+ * di-rename ke `.processing.json` SEBELUM eksekusi (supaya tool yang lambat
+ * tidak ke-pickup dua kali oleh tick berikutnya — file itu keluar dari glob
+ * `.cmd.json`), lalu dihapus SETELAH `.result.json` berhasil ditulis — supaya
+ * ada jejak di disk kalau proses crash di tengah eksekusi.
  * Proses satu per satu (bukan Promise.all) — sama seperti satu pesan
  * Telegram ditangani satu per satu hari ini.
+ *
+ * `name: 'stop'` adalah kasus khusus: TIDAK melalui routeCommand/runCommand,
+ * karena handler /stop asli memicu process.exit() (lewat deps.shutdown) —
+ * kalau di-await apa adanya, proses bisa exit SEBELUM .result.json ditulis,
+ * bikin scripts/skill-command.js nunggu penuh 30s utk command yg sebenarnya
+ * sukses. Di sini: tulis result DULU, baru trigger shutdown (deferred lewat
+ * setImmediate, tidak di-await) — caller command-queue selalu dapat respons
+ * cepat, shutdown tetap jalan setelahnya.
  */
-export function startCommandQueueLoop(runLlmTool, { dir = commandQueueDir(), intervalMs = 2000 } = {}) {
+export function startCommandQueueLoop({ runLlmTool, runCommand, shutdown }, { dir = commandQueueDir(), intervalMs = 2000, toolNames } = {}) {
+  const names = toolNames || new Set();
   return setInterval(async () => {
     let files;
     try {
@@ -59,25 +83,32 @@ export function startCommandQueueLoop(runLlmTool, { dir = commandQueueDir(), int
         try { fs.unlinkSync(cmdPath); } catch { /* sudah hilang */ }
         continue;
       }
-      // Rename (bukan hapus) ke `.processing.json` — keluar dari glob `.cmd.json`
-      // (mencegah tick berikutnya pickup dua kali) TAPI tetap ada jejak di disk
-      // kalau proses crash di tengah eksekusi (bug #20: file command hilang
-      // total kalau di-unlink sebelum result ditulis).
       const processingPath = path.join(dir, `${cmd.id}.processing.json`);
       try { fs.renameSync(cmdPath, processingPath); } catch { /* sudah hilang */ }
+
+      const finish = (out) => {
+        try {
+          fs.writeFileSync(path.join(dir, `${cmd.id}.result.json`), JSON.stringify(out));
+        } catch (e) {
+          log.error(`gagal tulis result utk ${cmd.id}:`, e.message);
+        }
+        try { fs.unlinkSync(processingPath); } catch { /* sudah hilang */ }
+      };
+
+      if (cmd.name === 'stop') {
+        finish({ id: cmd.id, ok: true, result: { text: 'shutting down' }, completedAt: Date.now() });
+        setImmediate(() => shutdown('skill-command stop'));
+        continue;
+      }
+
       let out;
       try {
-        const result = await runLlmTool(cmd.name, cmd.args || {});
+        const result = await routeCommand(cmd.name, cmd.args, { runLlmTool, runCommand, toolNames: names });
         out = { id: cmd.id, ok: true, result, completedAt: Date.now() };
       } catch (e) {
         out = { id: cmd.id, ok: false, error: e.message, completedAt: Date.now() };
       }
-      try {
-        fs.writeFileSync(path.join(dir, `${cmd.id}.result.json`), JSON.stringify(out));
-      } catch (e) {
-        log.error(`gagal tulis result utk ${cmd.id}:`, e.message);
-      }
-      try { fs.unlinkSync(processingPath); } catch { /* sudah hilang */ }
+      finish(out);
     }
   }, intervalMs);
 }
