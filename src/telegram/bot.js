@@ -41,6 +41,18 @@ const COMMANDS = [
   { command: 'stop', description: 'Shut down the bot' },
 ];
 
+// Commands reachable via Telegram#runCommand() (skill-mode command queue).
+// Deliberately NOT everything buildRegistry() wires — menu/start/help are
+// Telegram-UI-only, buy/sell/closeall/screen are already covered by
+// LLM_TOOL_DEFS in src/llm/tools.js. Keep in sync with skills/snipra/SKILL.md.
+const SKILL_MODE_COMMANDS = new Set([
+  'pause', 'resume', 'mode',
+  'darwin', 'evolve', 'lessons',
+  'config', 'get', 'set',
+  'status', 'stats', 'papertrades', 'paperreset', 'briefings', 'logs', 'gmgnactivity',
+  'stop',
+]);
+
 export class Telegram {
   /**
    * deps diisi dari index.js: { executor, screenOnce, buyToken, sellToken,
@@ -52,15 +64,17 @@ export class Telegram {
     this.chatId = process.env.TELEGRAM_CHAT_ID || null;
     this.bot = null;
     this._buyLocks = new Set(); // in-progress buy addresses — cegah double-tap/duplicate webhook
-    if (interactive) {
-      this._commands = buildRegistry({
-        ...deps,
-        send: (...a) => this._send(...a),
-        chainSlug: (k) => this._chainSlug(k),
-      });
-    } else {
-      this._commands = new Map();
-    }
+    // Registry is built unconditionally — `interactive` only controls whether
+    // Telegram polls for incoming messages/callbacks (see start()). In skill
+    // mode (interactive:false) the registry is still reachable via
+    // runCommand(), called from the file-based command queue instead of from
+    // typed Telegram messages.
+    this._commands = buildRegistry({
+      ...deps,
+      send: (...a) => this._send(...a),
+      chainSlug: (k) => this._chainSlug(k),
+    });
+    this._captureSink = null; // set during runCommand() to intercept send() text
   }
 
   start() {
@@ -107,6 +121,7 @@ export class Telegram {
   }
 
   async _send(text, extra = {}) {
+    if (this._captureSink) this._captureSink.push(text);
     if (!this.bot || !this.chatId) return;
     // link gmgn tanpa preview + Telegram limit 4096 char — pecah per chunk
     const opts = { parse_mode: 'Markdown', disable_web_page_preview: true, ...extra };
@@ -145,6 +160,31 @@ export class Telegram {
         }
       }
     }
+  }
+
+  /**
+   * Run a registered Telegram command handler outside of Telegram itself —
+   * used by the skill-mode command queue (src/skills/command-queue.js) so an
+   * agent gets the exact same command behavior a Telegram user would, without
+   * Telegram ever needing to receive typed commands (interactive:false).
+   * Gated by SKILL_MODE_COMMANDS — commands wired in the registry but not in
+   * that allowlist behave identically to a truly-unknown name.
+   * Mirrors the return convention of createToolRunner() in llm/tools.js:
+   * plain result object, `{error}` for "ran but rejected" (never throws for
+   * a bad/disallowed command name — only lets real handler exceptions propagate).
+   */
+  async runCommand(name, args) {
+    if (!SKILL_MODE_COMMANDS.has(name)) return { error: `unknown command: ${name}` };
+    const fn = this._commands.get('/' + name);
+    if (!fn) return { error: `unknown command: ${name}` };
+    const captured = [];
+    this._captureSink = captured;
+    try {
+      await fn(args, null);
+    } finally {
+      this._captureSink = null;
+    }
+    return { text: captured.join('\n\n') };
   }
 
   _chainSlug(chainKey) {
