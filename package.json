@@ -8,7 +8,7 @@
   "author": "0x1nfinity",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/0xinfinity101/snipra-memes-sniper-on-solana.git"
+    "url": "git+https://github.com/0x1nfinity/snipra-memes-sniper-on-solana.git"
   },
   "scripts": {
     "start": "node src/index.js",
