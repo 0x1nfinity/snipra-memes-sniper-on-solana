@@ -1,4 +1,4 @@
-# Snipra — Solana Meme Sniper
+# Snipra - Memes Sniper on solana
 
 Memecoin trading bot for **Solana**. Screens tokens via GMGN/DexScreener, executes trades via Jupiter/GMGN, manages positions with TP ladder + trailing stop + stop-loss, evolves screening filters via Darwin genetic algorithm, and uses LLM analysis to gate buy decisions.
 
