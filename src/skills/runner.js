@@ -14,7 +14,7 @@ import { createScreeningCycle, startScreeningLoop as startScreeningTimer, create
 import { buyToken, sellToken } from '../trade/helpers.js';
 import { runEvolve, onTradeClosed, setEvolveDeps } from '../darwin/evolve.js';
 import { startStatusLoop, stopStatusLoop, setStatusDeps, sendDailyBriefing } from '../telegram/reports.js';
-import { LLM_TOOL_DEFS, createToolRunner } from '../llm/tools.js';
+import { LLM_TOOL_DEFS, LLM_TOOL_NAMES, createToolRunner } from '../llm/tools.js';
 import { createLogger } from '../logger.js';
 import { sweepStaleCommandFiles, startCommandQueueLoop } from './command-queue.js';
 
@@ -66,7 +66,7 @@ async function main() {
   // tersapu di startup — bisa menumpuk di disk selama uptime panjang. Jalankan
   // periodik juga (tiap 30 menit), bukan cuma sekali.
   const _sweepInterval = setInterval(() => sweepStaleCommandFiles(), 30 * 60 * 1000);
-  let _stopCommandQueue = startCommandQueueLoop(runLlmTool);
+  let _stopCommandQueue = null;
 
   // Position manager
   const positionManager = new PositionManager({
@@ -91,6 +91,11 @@ async function main() {
     isPaused: () => paused,
     shutdown,
   }, { interactive: false });
+
+  _stopCommandQueue = startCommandQueueLoop(
+    { runLlmTool, runCommand: (name, args) => telegram.runCommand(name, args), shutdown },
+    { toolNames: LLM_TOOL_NAMES }
+  );
 
   // Wire deps
   setEvolveDeps({ darwin, llm, telegram, getConfig, recentTrades });
