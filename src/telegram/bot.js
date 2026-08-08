@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import TelegramBot from 'node-telegram-bot-api';
 import { getConfig, getActiveMode } from '../config.js';
 import { tokenPairs, bestPair, normalizePair, search } from '../screener/dexscreener.js';
@@ -12,6 +13,13 @@ import { handleMenuCallback } from './commands/config.js';
 const SOL_ADDR_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 const log = createLogger('telegram');
+
+// Scopes runCommand()'s send() capture to that specific call's async chain —
+// a background notify() (status loop, position-close alert) firing on the
+// same Telegram instance while a handler is mid-await runs in a DIFFERENT
+// async context and correctly sees no store, so it can't leak into an
+// unrelated runCommand()'s captured text.
+const captureContext = new AsyncLocalStorage();
 
 // Registered to Telegram automatically on start (setMyCommands) —
 // no manual BotFather setup needed.
@@ -74,7 +82,6 @@ export class Telegram {
       send: (...a) => this._send(...a),
       chainSlug: (k) => this._chainSlug(k),
     });
-    this._captureSink = null; // set during runCommand() to intercept send() text
   }
 
   start() {
@@ -121,7 +128,8 @@ export class Telegram {
   }
 
   async _send(text, extra = {}) {
-    if (this._captureSink) this._captureSink.push(text);
+    const sink = captureContext.getStore();
+    if (sink) sink.push(text);
     if (!this.bot || !this.chatId) return;
     // link gmgn tanpa preview + Telegram limit 4096 char — pecah per chunk
     const opts = { parse_mode: 'Markdown', disable_web_page_preview: true, ...extra };
@@ -178,12 +186,7 @@ export class Telegram {
     const fn = this._commands.get('/' + name);
     if (!fn) return { error: `unknown command: ${name}` };
     const captured = [];
-    this._captureSink = captured;
-    try {
-      await fn(args, null);
-    } finally {
-      this._captureSink = null;
-    }
+    await captureContext.run(captured, () => fn(args, null));
     return { text: captured.join('\n\n') };
   }
 
