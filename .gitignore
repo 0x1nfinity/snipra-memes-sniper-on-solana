@@ -51,10 +51,11 @@ bug.md
 docs/superpowers/
 
 # Local strategy config — personal trading params, not for the repo.
-# Copy live-config.example.json / paper-config.example.json to get started;
-# the bot also auto-creates these with defaults on first run.
+# Copy live-config.example.json / paper-config.example.json / strategy.example.json
+# to get started; the bot also auto-creates these with defaults on first run.
 live-config.json
 paper-config.json
+strategy.json
 # Old unified config (migrated to paper-config.json + live-config.json)
 config.json
 # Old naming scheme (pre-v2 rename)

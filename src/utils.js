@@ -8,7 +8,13 @@ export function fmtUsd(n) {
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `$${(n / 1_000).toFixed(1)}K`;
   if (n >= 1) return `$${n.toFixed(2)}`;
-  return `$${n.toPrecision(4)}`;
+  if (n <= 0) return `$${n.toPrecision(4)}`;
+  // Sub-$1 memecoin prices (e.g. 0.00000012345) — toPrecision(4) switches to
+  // scientific notation below 1e-6, unreadable in Telegram. Format as full
+  // decimal with ~4 significant digits instead.
+  const exp = Math.floor(Math.log10(n));
+  const decimals = 3 - exp;
+  return `$${n.toFixed(decimals)}`;
 }
 
 export function fmtPct(n) {

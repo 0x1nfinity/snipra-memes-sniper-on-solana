@@ -1,6 +1,6 @@
 import { getConfig } from '../config.js';
 import { findOpen, inCooldown, openPositions, addPosition, closePosition,
-         recordPartialSell, findMoonbag, removeMoonbag } from '../positions/state.js';
+         recordPartialSell, findMoonbag, removeMoonbag, recordMoonbagPartialSell } from '../positions/state.js';
 import { tokenPairs, bestPair, normalizePair } from '../screener/dexscreener.js';
 import { evaluate } from '../screener/filters.js';
 import { shortAddr } from '../utils.js';
@@ -62,11 +62,26 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
       if (attempt > 0) log.info(`buy retry #${attempt} succeeded for ${c.symbol}`);
       break;
     } catch (e) {
-      if (/not confirmed/i.test(e.message)) throw e; // tx sudah tersiar ke jaringan — jangan retry, risiko beli ganda
+      // tx sudah tersiar (atau broadcast-nya sendiri tidak pasti) — jangan retry, risiko beli ganda
+      if (/not confirmed|broadcast uncertain/i.test(e.message)) throw e;
       const isTransient = TRANSIENT_BUY_ERROR_RE.test(e.message);
       if (!isTransient || attempt >= maxRetries) throw e;
       log.debug(`buy retry #${attempt + 1} for ${c.symbol} in ${retryDelayMs}ms: ${e.message}`);
       await new Promise((r) => setTimeout(r, retryDelayMs));
+    }
+  }
+  // entryPrice HARUS priceNative (SOL) — monitoring (manager.js:priceOf) &
+  // display (status.js) berasumsi pos.entryPrice selalu native, bukan USD.
+  // Kalau candidate tidak bawa priceNative (screener seharusnya sudah gate
+  // ini di loops.js sebelum sampai sini), re-resolve dari DexScreener alih-
+  // alih fallback ke priceUsd — supaya tidak pernah campur unit lagi.
+  let entryPrice = c.priceNative > 0 ? c.priceNative : null;
+  if (!(entryPrice > 0)) {
+    try {
+      const fresh = await resolveCandidate(chainKey, c.address);
+      entryPrice = fresh.priceNative > 0 ? fresh.priceNative : 0;
+    } catch (e) {
+      log.warn(`entryPrice re-resolve failed for ${c.symbol}: ${e.message}`);
     }
   }
   const pos = addPosition({
@@ -75,7 +90,7 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
     symbol: c.symbol,
     pairAddress: c.pairAddress,
     labels: c.labels,
-    entryPrice: c.priceNative > 0 ? c.priceNative : c.priceUsd,
+    entryPrice,
     amountNative: res.spentNative,
     tokensRaw: res.tokensRaw,
     txid: res.txid,
@@ -94,7 +109,20 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
   return { ...pos, txid: res.txid };
 }
 
+function moonbagFinalPnlPct(mb, exitPrice) {
+  if (!(mb.entryPrice > 0)) return 0;
+  return ((exitPrice - mb.entryPrice) / mb.entryPrice) * 100;
+}
+
 export async function sellToken(address, pct, executor, onTradeClosed) {
+  // Validasi terpusat — pct negatif/NaN/0 merusak state paper secara permanen
+  // (holdings naik, saldo salah arah, remainingPct > 100%, atau NaN menyebar).
+  // Reachable dari /sell manual & LLM tool sell_token, jadi divalidasi di satu
+  // titik temu ini, bukan di masing-masing caller.
+  pct = Number(pct);
+  if (!(pct > 0 && pct <= 100)) {
+    throw new Error(`invalid pct: must be a number 0 < pct <= 100, got ${pct}`);
+  }
   const pos = openPositions().find(
     (p) => p.address.toLowerCase() === address.toLowerCase()
   );
@@ -102,7 +130,7 @@ export async function sellToken(address, pct, executor, onTradeClosed) {
     const res = await executor.sell(pos.chain, pos.address, pct, { labels: pos.labels, fallbackPriceUsd: pos.currentPrice });
     if (pct >= 100) {
       const trade = closePosition(pos, { reason: 'manual sell', receivedNative: res.receivedNative, txid: res.txid });
-      onTradeClosed(trade);
+      if (trade) onTradeClosed(trade); // null = sudah di-close di jalur lain (race) — idempotency guard
     } else {
       recordPartialSell(pos, { pctOfRemaining: pct, receivedNative: res.receivedNative, txid: res.txid });
     }
@@ -111,8 +139,27 @@ export async function sellToken(address, pct, executor, onTradeClosed) {
   const mb = findMoonbag(address);
   if (!mb) throw new Error(`no position/moonbag for ${shortAddr(address)}`);
   const res = await executor.sell(mb.chain, mb.address, pct, { labels: mb.labels, fallbackPriceUsd: mb.currentPrice });
-  if (pct >= 100) removeMoonbag(mb.id);
-  else mb.moonPct = mb.moonPct * (1 - pct / 100);
+  if (pct >= 100) {
+    // Moonbag exit sepenuhnya — laporkan PnL tambahan ini ke Darwin fitness/LLM
+    // lesson (sebelumnya tidak pernah dilaporkan sama sekali, understating nilai
+    // riil genome yang menghasilkan trade ini). Mark-based (currentPrice terakhir),
+    // konsisten dgn pola currentPnlPct() yang dipakai di notifikasi lain.
+    if (mb.genomeId && onTradeClosed) {
+      onTradeClosed({
+        genomeId: mb.genomeId,
+        finalPnlPct: moonbagFinalPnlPct(mb, mb.currentPrice),
+        chain: mb.chain,
+        symbol: mb.symbol,
+        openedAt: mb.openedAt,
+        closeReason: 'moonbag exit',
+        holdMinutes: (Date.now() - mb.openedAt) / 60000,
+        tpHit: [],
+      });
+    }
+    removeMoonbag(mb.id);
+  } else {
+    recordMoonbagPartialSell(mb, pct);
+  }
   log.info(`moonbag sell ${pct}% ${mb.symbol} → ${res.receivedNative?.toFixed(6)} native`);
   return { ...res, chain: mb.chain };
 }

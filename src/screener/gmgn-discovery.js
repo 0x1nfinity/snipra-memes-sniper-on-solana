@@ -46,10 +46,15 @@ function buildServerFilters(filters) {
     const val = filters[configKey];
     if (val != null) server[apiKey] = val;
   }
-  // maxTop10HolderRate is a percentage (0-100) in config — GMGN API expects
-  // a fraction (0-1), so convert it back here.
+  // maxTop10HolderRate/maxDevHoldRate are percentages (0-100) in config —
+  // GMGN API expects a fraction (0-1), so convert back here. raw.dev_team_hold_rate
+  // is *100-scaled the same way as raw.top_10_holder_rate (gmgn-discovery.js:110-115),
+  // confirming the API expects a fraction for both.
   if (server.max_top_holder_rate != null) {
     server.max_top_holder_rate = server.max_top_holder_rate / 100;
+  }
+  if (server.max_creator_balance_rate != null) {
+    server.max_creator_balance_rate = server.max_creator_balance_rate / 100;
   }
   // Progress is 0-100 in config — GMGN API expects 0-1 fraction
   if (filters.minProgress != null) server.min_progress = filters.minProgress / 100;

@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createLogger } from './logger.js';
-import { applyStrategy } from './strategies.js';
+import { applyStrategy, loadStrategies, ensureStrategyFile, strategyFilePath } from './strategies.js';
 
 const log = createLogger('config');
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -67,39 +67,12 @@ export const DEFAULTS = {
     // Alternatif: startBalanceUsd (angka) utk konversi otomatis dari USD.
     startBalance: { solana: 10 },
   },
+  // screener.filters/section TIDAK ada di sini lagi — sepenuhnya dipindah ke
+  // strategy.json (per-strategi, termasuk "myself"), diterapkan tanpa syarat
+  // oleh applyStrategy() di buildConfig(). Lihat src/strategies.js.
   screener: {
     maxCandidatesPerCycle: 3,
     source: 'gmgn',                     // 'gmgn' | 'dexscreener'
-    section: 'new_creation',            // 'new_creation' | 'completed' | 'pump'
-    filters: {
-      launchpads: ['Pump.fun'],         // [] or null = all launchpads
-      minVolume24h: 50000,
-      maxVolume24h: null,
-      minLiquidity: 20000,
-      maxLiquidity: null,
-      minMarketCap: 100000,
-      maxMarketCap: 20000000,
-      minHolders: 200,
-      maxHolders: null,
-      minSwaps24h: 300,
-      maxSwaps24h: null,
-      minAgeMinutes: 30,
-      maxAgeMinutes: 10080,             // 7 days
-      minProgress: 0,                    // bonding curve % (0-100)
-      maxProgress: 100,
-      maxRugRatio: 0.3,
-      maxBundlerRate: 0.3,
-      maxInsiderRate: 0.3,
-      minTotalFee: null,
-      maxTotalFee: null,
-      maxBotDegenRate: null,
-      maxTop10HolderRate: 85,
-      maxDevHoldRate: null,
-      minSmartDegenCount: null,
-      maxFreshWalletRate: null,
-      blockHoneypot: true,
-      blockWashTrading: true,
-    },
     preScoreEnabled: true,
   },
   trading: {
@@ -175,8 +148,11 @@ export const DEFAULTS = {
     // menutup otomatis posisi yg sudah 0 saldo tapi masih tercatat terbuka). 0 = nonaktif.
     onchainReconcileSec: 60,
   },
+  // darwin.enabled/autoEvolve & llm.enabled TIDAK ada di sini lagi — sepenuhnya
+  // dipindah ke strategy.json (per-strategi), diterapkan tanpa syarat oleh
+  // applyStrategy() di buildConfig(). Setting lain (tuning population/model/dst)
+  // tetap global di sini.
   darwin: {
-    enabled: true,
     populationSize: 8,
     evolveEveryNTrades: 20,
     mutationRate: 0.35,
@@ -184,7 +160,6 @@ export const DEFAULTS = {
     minTradesForFitness: 3,
   },
   llm: {
-    enabled: false, // aktifkan via /set llm.enabled true (butuh API key)
     provider: 'openrouter', // 'openrouter' | 'deepseek'
     model: 'deepseek/deepseek-chat-v3-0324', // model OpenRouter; provider deepseek pakai 'deepseek-chat'
     // LLM = GATE buy/skip, BUKAN sizer: ukuran posisi selalu = trading.buyAmount.
@@ -209,8 +184,15 @@ export const DEFAULTS = {
 };
 
 function deepMerge(base, override) {
-  if (Array.isArray(base) || Array.isArray(override)) return override ?? base;
-  if (typeof base !== 'object' || base === null) return override ?? base;
+  // Hanya `undefined` yg berarti "tidak di-override, pakai base" — `null`
+  // eksplisit HARUS dihormati sbg nilai override (konvensi luas di codebase
+  // ini: null = "filter dinonaktifkan", mis. maxBotDegenRate/minLiquidity).
+  // `override ?? base` yg lama menganggap null jadi jatuh balik ke base,
+  // membuat user tidak pernah bisa menonaktifkan filter yg DEFAULTS-nya
+  // bukan null lewat live-config.json.
+  if (Array.isArray(base) || Array.isArray(override)) return override === undefined ? base : override;
+  if (typeof base !== 'object' || base === null) return override === undefined ? base : override;
+  if (override === null) return null;
   const out = { ...base };
   for (const k of Object.keys(override || {})) {
     out[k] = k in base ? deepMerge(base[k], override[k]) : override[k];
@@ -279,7 +261,9 @@ function buildConfig(mode) {
   const keysEnv = process.env.GMGN_API_KEYS || '';
   merged.screener.gmgnApiKeys = keysEnv.split(',').map((k) => k.trim()).filter(Boolean);
 
-  // Apply strategy preset filter overrides (no-op when strategy === 'myself')
+  // strategy.json dibaca ulang tiap buildConfig() (sama seperti live/paper-config.json)
+  // supaya edit manual ikut hot-reload tanpa restart proses.
+  loadStrategies();
   merged = applyStrategy(merged, merged.strategy);
 
   return merged;
@@ -300,6 +284,7 @@ function ensureConfigFiles() {
     fs.writeFileSync(paperFile, JSON.stringify(seed, null, 2));
     log.info('paper-config.json missing — created (paper override only: startBalance)');
   }
+  ensureStrategyFile();
 }
 
 export function loadConfig() {
@@ -365,8 +350,24 @@ function writePathToFile(file, pathStr, value) {
   fs.writeFileSync(file, JSON.stringify(saved, null, 2));
 }
 
+// Path live-config.json/paper-config.json → path setara di strategy.json (relatif
+// thd strategi AKTIF). screener.filters/section, llm.enabled, darwin.enabled,
+// darwin.autoEvolve sekarang dimiliki strategy.json, bukan live-config.json —
+// /set harus menulis ke sana supaya perubahan benar-benar berlaku (sebelumnya
+// field ini bisa "sukses" ditulis ke live-config.json tapi diam-diam diabaikan
+// karena applyStrategy() selalu override; lihat strategies.js).
+function strategyRoutedPath(pathStr) {
+  if (pathStr.startsWith('screener.filters.')) return pathStr.replace('screener.filters.', 'filters.');
+  if (pathStr === 'screener.section') return 'section';
+  if (pathStr === 'llm.enabled') return 'llmEnabled';
+  if (pathStr === 'darwin.enabled') return 'darwinEnabled';
+  if (pathStr === 'darwin.autoEvolve') return 'autoEvolve';
+  return null;
+}
+
 /** File tujuan penyimpanan untuk sebuah path /set, tergantung mode aktif. */
 function targetFileForPath(pathStr) {
+  if (strategyRoutedPath(pathStr) != null) return strategyFilePath();
   if (activeMode === 'paper' && isPaperOverridePath(pathStr)) return configFileFor('paper');
   return configFileFor('live');
 }
@@ -444,7 +445,7 @@ function watchFileChange(file) {
 function refreshWatchers() {
   if (!configWatcher) return;
   for (const f of watchedFiles) fs.unwatchFile(f);
-  watchedFiles = [configFileFor('live')];
+  watchedFiles = [configFileFor('live'), strategyFilePath()];
   if (activeMode === 'paper') watchedFiles.push(configFileFor('paper'));
   for (const f of watchedFiles) watchFileChange(f);
 }
@@ -493,7 +494,22 @@ export function setPath(pathStr, rawValue) {
         try { value = JSON.parse(s); } catch { value = s; }
       }
     }
-    writePathToFile(targetFileForPath(pathStr), pathStr, value);
+    // Validasi tipe terhadap nilai existing di path yg sama — kalau field itu
+    // sebelumnya numeric/boolean, tolak string yang gagal koersi (mis. "abc")
+    // alih-alih menyimpannya diam-diam dan baru gagal di titik pemakaian.
+    const existing = getPath(pathStr);
+    if (typeof existing === 'number' && typeof value !== 'number') {
+      throw new Error(`invalid value for ${pathStr}: expected a number, got "${rawValue}"`);
+    }
+    if (typeof existing === 'boolean' && typeof value !== 'boolean') {
+      throw new Error(`invalid value for ${pathStr}: expected true/false, got "${rawValue}"`);
+    }
+    // screener.filters.*/section, llm.enabled, darwin.enabled/autoEvolve tulis
+    // ke strategy.json di bawah strategi yg SEDANG AKTIF (config.strategy) —
+    // bukan pathStr apa adanya, krn struktur strategy.json dikelompokkan per nama strategi.
+    const routedSub = strategyRoutedPath(pathStr);
+    const writePath = routedSub != null ? `${config.strategy}.${routedSub}` : pathStr;
+    writePathToFile(targetFileForPath(pathStr), writePath, value);
     // Rebuild dari file (bukan cuma tempel ke in-memory) — perlu supaya field turunan
     // seperti chains.solana.buyAmount (disintesis dari trading.buyAmount) ikut sinkron.
     config = buildConfig(activeMode);

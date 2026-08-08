@@ -32,8 +32,11 @@ export function sweepStaleCommandFiles(dir = commandQueueDir(), maxAgeMs = 60 * 
 
 /**
  * Polling folder inbox tiap intervalMs, eksekusi tiap .cmd.json lewat
- * runLlmTool, tulis .result.json, hapus .cmd.json SEBELUM eksekusi (supaya
- * tool yang lambat tidak ke-pickup dua kali oleh tick berikutnya).
+ * runLlmTool, tulis .result.json. `.cmd.json` di-rename ke `.processing.json`
+ * SEBELUM eksekusi (supaya tool yang lambat tidak ke-pickup dua kali oleh
+ * tick berikutnya — file itu keluar dari glob `.cmd.json`), lalu dihapus
+ * SETELAH `.result.json` berhasil ditulis — supaya ada jejak di disk kalau
+ * proses crash di tengah eksekusi.
  * Proses satu per satu (bukan Promise.all) — sama seperti satu pesan
  * Telegram ditangani satu per satu hari ini.
  */
@@ -56,7 +59,12 @@ export function startCommandQueueLoop(runLlmTool, { dir = commandQueueDir(), int
         try { fs.unlinkSync(cmdPath); } catch { /* sudah hilang */ }
         continue;
       }
-      try { fs.unlinkSync(cmdPath); } catch { /* sudah hilang */ }
+      // Rename (bukan hapus) ke `.processing.json` — keluar dari glob `.cmd.json`
+      // (mencegah tick berikutnya pickup dua kali) TAPI tetap ada jejak di disk
+      // kalau proses crash di tengah eksekusi (bug #20: file command hilang
+      // total kalau di-unlink sebelum result ditulis).
+      const processingPath = path.join(dir, `${cmd.id}.processing.json`);
+      try { fs.renameSync(cmdPath, processingPath); } catch { /* sudah hilang */ }
       let out;
       try {
         const result = await runLlmTool(cmd.name, cmd.args || {});
@@ -69,6 +77,7 @@ export function startCommandQueueLoop(runLlmTool, { dir = commandQueueDir(), int
       } catch (e) {
         log.error(`gagal tulis result utk ${cmd.id}:`, e.message);
       }
+      try { fs.unlinkSync(processingPath); } catch { /* sudah hilang */ }
     }
   }, intervalMs);
 }

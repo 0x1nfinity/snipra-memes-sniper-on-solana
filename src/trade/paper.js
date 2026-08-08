@@ -150,12 +150,14 @@ export class PaperChain {
     const receivedNative = tokens * fillPrice;
 
     const gasFee = this._gasFee();
-    // Gas is already deducted from gotNative before crediting
     paperSetHolding(this.key, tokenAddress, held - tokens);
     paperAdjustBalance(this.key, receivedNative - gasFee);
 
     const txid = `paper-sell-${Date.now()}`;
     log.info(`SELL [paper:${this.key}] ${pct}% ${tokenAddress.slice(0, 8)} → ${receivedNative.toFixed(4)} native (gas -${gasFee})`);
-    return { txid, soldRaw: tokens, receivedNative };
+    // receivedNative dilaporkan NET gas — konsisten dgn buy() (spentNative tidak
+    // termasuk gas, saldo didebit amountNative+gasFee). PnL/state yang disimpan
+    // caller (state.js) harus mencerminkan perubahan saldo riil, bukan nilai pre-gas.
+    return { txid, soldRaw: tokens, receivedNative: receivedNative - gasFee };
   }
 }

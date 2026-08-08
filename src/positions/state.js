@@ -192,6 +192,14 @@ export function recordPartialSell(pos, { pctOfRemaining, receivedNative, tierInd
 }
 
 export function closePosition(pos, { reason, receivedNative, txid }) {
+  // Idempotency guard — kalau posisi sudah tidak ada di state.open (sudah
+  // di-close di jalur lain, mis. tick() vs /sell manual race), jangan proses
+  // lagi. Mencegah double-count stats/trade records saat dua caller memanggil
+  // closePosition() pada objek pos yang sama.
+  if (!state.open.some((p) => p.id === pos.id)) {
+    log.warn(`closePosition: pos ${pos.id} (${pos.symbol}) already closed, skipping duplicate`);
+    return null;
+  }
   pos.realizedNative += receivedNative || 0;
   // PnL final pakai SOL riil, bukan mark harga oracle — swap eksekusi (slippage,
   // price impact, fee) sering meleset jauh dari harga poll terakhir.
@@ -247,6 +255,9 @@ export function findMoonbag(address) {
  * dan tidak menghitung slot maxPositions.
  */
 export function moveToMoonbag(pos, { reason, receivedNative, txid }) {
+  // Idempotency — closePosition() sendiri sudah guard, tapi kalau pos sudah
+  // di-close di jalur lain (race), jangan lanjut push snapshot moonbag duplikat.
+  if (!state.open.some((p) => p.id === pos.id)) return null;
   const moonPct = pos.remainingPct;
   const snapshot = {
     id: `moon-${pos.chain}-${pos.address.slice(0, 8)}-${Date.now()}`,
@@ -261,6 +272,7 @@ export function moveToMoonbag(pos, { reason, receivedNative, txid }) {
     moonPct, // % dari posisi awal yang di-hold
     openedAt: pos.openedAt,
     movedAt: Date.now(),
+    genomeId: pos.genomeId || null, // supaya exit moonbag bisa dilaporkan ke Darwin fitness
   };
   const trade = closePosition(pos, { reason, receivedNative, txid });
   state.moonbags.push(snapshot);
@@ -276,6 +288,11 @@ export function updateMoonbagPrice(m, price) {
 
 export function removeMoonbag(id) {
   state.moonbags = state.moonbags.filter((m) => m.id !== id);
+  persist();
+}
+
+export function recordMoonbagPartialSell(mb, pct) {
+  mb.moonPct = mb.moonPct * (1 - pct / 100);
   persist();
 }
 

@@ -61,6 +61,11 @@ async function main() {
   });
 
   sweepStaleCommandFiles();
+  // Orphan .cmd.json/.result.json/.processing.json files (dari command yg
+  // callernya mati sebelum consume result, atau crash mid-execution) hanya
+  // tersapu di startup — bisa menumpuk di disk selama uptime panjang. Jalankan
+  // periodik juga (tiap 30 menit), bukan cuma sekali.
+  const _sweepInterval = setInterval(() => sweepStaleCommandFiles(), 30 * 60 * 1000);
   let _stopCommandQueue = startCommandQueueLoop(runLlmTool);
 
   // Position manager
@@ -125,6 +130,7 @@ async function main() {
     process.stdout.write(JSON.stringify({ type: 'shutdown', reason }) + '\n');
     if (_stopScreening) _stopScreening();
     clearInterval(_stopCommandQueue);
+    clearInterval(_sweepInterval);
     stopStatusLoop();
     positionManager.stop();
     try { await telegram.stopPolling(); } catch (e) { log.warn('telegram stopPolling error:', e.message); }
@@ -144,6 +150,10 @@ async function main() {
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('unhandledRejection', (e) => log.error('unhandledRejection:', e?.message || e));
+  process.on('uncaughtException', (e) => {
+    log.error('uncaughtException:', e?.stack || e?.message || e);
+    shutdown('uncaughtException');
+  });
 
   // Entry
   const cfg = getConfig();

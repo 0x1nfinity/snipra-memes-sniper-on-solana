@@ -201,6 +201,13 @@ export class SolanaChain {
           log.warn(`tier ${tier.label} tx too large, trying next tier`);
           continue;
         }
+        // sendRawTransaction sendiri bisa gagal SETELAH RPC node menerima &
+        // mulai broadcast tx (response call yg timeout/connection-reset) —
+        // treat sama hati-hati seperti error konfirmasi: tandai supaya
+        // caller (buyToken retry loop, trade/helpers.js) TIDAK auto-retry
+        // via TRANSIENT_BUY_ERROR_RE tanpa verifikasi eksplisit bahwa tx
+        // benar-benar belum tersiar (risiko beli ganda).
+        e.message = `tx broadcast uncertain (sendRawTransaction failed): ${e.message}`;
         throw e;
       }
 

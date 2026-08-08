@@ -71,17 +71,35 @@ export function createScreeningCycle(deps) {
       const bought = [];
       const rejected = [];
       const BUY_DELAY_MS = 20000; // 20s antar buy — circuit breaker max 3/min
+      // Max buy per cycle: jangan lebih dari slot yg tersedia di awal.
+      // Monitor bisa tutup posisi selama loop (trailing/SL) → slot terbuka
+      // lagi, tapi kita batasi total buy per siklus agar tidak terjadi
+      // "revolving door" — beli → close → beli → close tanpa henti.
+      // Kalau availSlots<=0 (hanya reachable via force=true, krn early-return
+      // di atas sudah menangani kasus non-force), tidak ada slot legit di awal
+      // siklus utk dibatasi — skip cap ini sepenuhnya & fallback ke cek
+      // real-time (openPositions().length >= effMax) di bawah. Math.min(0 or
+      // negative, ...) akan selalu 0 dan menolak SEMUA kandidat walau slot
+      // terbuka di tengah siklus krn monitor loop menutup posisi lain.
+      const maxBuyThisCycle = availSlots > 0 ? Math.min(availSlots, candidates.length) : candidates.length;
       for (const c of candidates) {
-        // Cek slot tersisa — berhenti kalau penuh
-        const remaining = effMax - openPositions().length;
-        if (remaining <= 0) {
+        // Batas total buy per siklus — cegah beli terus-menerus
+        if (bought.length >= maxBuyThisCycle) {
+          rejected.push({ c, reason: 'cycle buy limit reached' });
+          continue;
+        }
+        // Cek slot real-time — monitor mungkin sudah tutup posisi
+        if (openPositions().length >= effMax) {
           rejected.push({ c, reason: 'max positions reached' });
           continue;
         }
-        // Skip token tanpa harga — GMGN & DexScreener blm terindeks
-        if (!(c.priceUsd > 0)) {
+        // Skip token tanpa priceNative — ini yg dipakai sbg entryPrice
+        // (trade/helpers.js) & source of truth monitoring (manager.js).
+        // priceUsd bisa ada dari GMGN meski DexScreener blm terindeks —
+        // itu tidak cukup, entryPrice butuh priceNative biar konsisten.
+        if (!(c.priceNative > 0)) {
           rejected.push({ c, reason: 'no price data' });
-          log.debug(`skip buy ${c.symbol}: no price data`);
+          log.debug(`skip buy ${c.symbol}: no priceNative`);
           continue;
         }
         c.genomeId = genomeId;
@@ -89,7 +107,7 @@ export function createScreeningCycle(deps) {
           const pos = await buyToken(c.chain, c.address, undefined, 'screener', c);
           bought.push({ c, pos });
           // Delay antar buy agar tidak trip circuit breaker (max 3/min)
-          if (openPositions().length < effMax) {
+          if (bought.length < maxBuyThisCycle || openPositions().length < effMax) {
             await new Promise((r) => setTimeout(r, BUY_DELAY_MS));
           }
         } catch (e) {

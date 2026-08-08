@@ -55,11 +55,19 @@ export function resolveExitGenome(cfg, genes) {
 }
 
 /**
- * Enrich harga dari GMGN token/info, fallback ke DexScreener tokenPairs.
+ * Enrich harga dari GMGN token/info (utk priceUsd/priceChange), lalu WAJIB
+ * DexScreener tokenPairs utk priceNative — GMGN tidak pernah menyediakan
+ * priceNative. entryPrice & monitoring (manager.js:priceOf) pakai priceNative
+ * sbg source of truth; kalau tidak diisi di sini, buyToken() (trade/helpers.js)
+ * fallback ke priceUsd sbg entryPrice → unit mismatch (USD vs SOL) yg bikin
+ * PnL/peak jadi ngaco meski entryPrice > 0 (tidak Infinity, tapi salah total).
  * Mutasi candidate langsung.
  */
 async function enrichPrice(candidate) {
-  // GMGN token/info
+  let gmgnPriceUsd = null;
+  let gmgnPriceChange = null;
+
+  // GMGN token/info — priceUsd/priceChange saja, bukan priceNative.
   try {
     const ts = Math.floor(Date.now() / 1000);
     const q = new URLSearchParams({ chain: 'sol', address: candidate.address, timestamp: ts, client_id: 'snipra' });
@@ -67,32 +75,41 @@ async function enrichPrice(candidate) {
       headers: { 'X-APIKEY': getConfig().screener.gmgnApiKeys?.[0] || '', 'Content-Type': 'application/json' },
     }, { timeoutMs: 10000, retries: 0 });
     if (info?.data?.price != null) {
-      candidate.priceUsd = Number(info.data.price) || 0;
-      candidate.priceChange = {
+      gmgnPriceUsd = Number(info.data.price) || 0;
+      gmgnPriceChange = {
         m5: info.data.price_change_5m ?? 0,
         h1: info.data.price_change_1h ?? 0,
         h6: info.data.price_change_6h ?? 0,
         h24: info.data.price_change_24h ?? 0,
       };
-      return;
     }
   } catch (e) {
     log.debug(`GMGN token/info failed for ${candidate.symbol}: ${e.message}`);
   }
 
-  // Fallback DexScreener
+  // DexScreener — wajib utk priceNative. Kalau pair belum terindeks,
+  // priceNative tetap null dan candidate akan di-skip sebelum buy.
   try {
     const pairs = await tokenPairs('solana', candidate.address);
     const best = bestPair(pairs);
     if (best) {
       const norm = normalizePair(best, 'solana');
       if (norm) {
-        candidate.priceUsd = norm.priceUsd;
-        candidate.priceChange = norm.priceChange;
+        candidate.priceNative = norm.priceNative;
+        candidate.priceUsd = gmgnPriceUsd ?? norm.priceUsd;
+        candidate.priceChange = gmgnPriceChange ?? norm.priceChange;
+        return;
       }
     }
   } catch (e) {
     log.debug(`DexScreener price fallback failed for ${candidate.symbol}: ${e.message}`);
+  }
+
+  // DexScreener tidak punya pair — simpan priceUsd GMGN (display only),
+  // priceNative tetap null.
+  if (gmgnPriceUsd != null) {
+    candidate.priceUsd = gmgnPriceUsd;
+    candidate.priceChange = gmgnPriceChange;
   }
 }
 
@@ -124,6 +141,9 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
   const limit = cfg.screener.maxCandidatesPerCycle * 3;
 
   let candidates = [];
+  // Jumlah kandidat MENTAH yang benar-benar dievaluasi (sebelum filter apapun) —
+  // beda dari candidates.length di akhir yg sudah lolos semua filter/ranking/LLM.
+  let scannedCount = 0;
 
   // === Primary: GMGN ===
   // Server-side pakai baseFilters (bukan genome-tightened) — genome
@@ -139,6 +159,7 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
 
     if (result.candidates.length > 0) {
       candidates = result.candidates;
+      scannedCount = candidates.length;
       log.info(`GMGN ${section}: ${candidates.length} candidates received (server-side filtered)`);
 
       // Enrich harga: GMGN token/info → DexScreener fallback
@@ -147,6 +168,18 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
         : cfg.screener.maxCandidatesPerCycle * 3;
       const toEnrich = candidates.slice(0, maxEnrich);
       await mapLimit(toEnrich, 3, enrichPrice);
+
+      // GMGN server-side hanya filter risk/quality (buildServerFilters).
+      // Market-data filter (mcap, liquidity, volume, holders, age, dst) HARUS
+      // dicek client-side di sini — tanpa ini semua kandidat GMGN lolos tanpa
+      // filter market data sama sekali.
+      const beforeFilter = candidates.length;
+      candidates = candidates.filter((c) => {
+        const res = evaluate(c, filters);
+        if (!res.pass) log.debug(`${c.symbol} rejected: ${res.reasons.join(', ')}`);
+        return res.pass;
+      });
+      log.info(`GMGN client-side filter: ${candidates.length}/${beforeFilter} passed`);
     } else {
       log.warn(`GMGN returned no candidates (error: ${result.error || 'none'}), falling back to DexScreener`);
     }
@@ -174,6 +207,7 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
         (filters.maxAgeMinutes == null || (c.ageMinutes != null && c.ageMinutes <= filters.maxAgeMinutes))
       );
     });
+    scannedCount = raw.length;
     log.info(`DexScreener scanned ${raw.length}, passed pre-filter ${cheap.length}`);
 
     const maxEnrich = availSlots != null
@@ -191,7 +225,16 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
       }
     });
 
+    // Kandidat di luar toEnrich tidak pernah dapat c.holders/c.security dari GoPlus
+    // (masih null) — evaluate() men-SKIP (bukan gagalkan) cek holder/honeypot/wash-
+    // trading kalau data null, jadi mereka akan lolos filter tanpa pernah benar-benar
+    // dicek. Exclude eksplisit dari candidates alih-alih lolos diam-diam.
+    const enrichedAddrs = new Set(toEnrich.map((c) => c.address));
     for (const c of cheap) {
+      if (!enrichedAddrs.has(c.address)) {
+        log.debug(`${c.symbol} rejected: not enriched this cycle (budget)`);
+        continue;
+      }
       const res = evaluate(c, filters);
       if (res.pass) candidates.push(c);
       else log.debug(`${c.symbol} rejected: ${res.reasons.join(', ')}`);
@@ -280,5 +323,5 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
 
   for (const c of candidates) c.exitGenes = exitGenes || {};
   log.info(`final candidates: ${candidates.map((c) => c.symbol).join(', ') || '(none)'}`);
-  return { candidates, genomeId, scanned: candidates.length };
+  return { candidates, genomeId, scanned: scannedCount };
 }

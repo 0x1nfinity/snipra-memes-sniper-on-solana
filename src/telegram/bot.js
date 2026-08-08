@@ -51,6 +51,7 @@ export class Telegram {
     this.interactive = interactive;
     this.chatId = process.env.TELEGRAM_CHAT_ID || null;
     this.bot = null;
+    this._buyLocks = new Set(); // in-progress buy addresses — cegah double-tap/duplicate webhook
     if (interactive) {
       this._commands = buildRegistry({
         ...deps,
@@ -247,6 +248,12 @@ export class Telegram {
     }
     if (data.startsWith('buy:')) {
       const [, chain, address] = data.split(':');
+      const lockKey = `${chain}:${address}`.toLowerCase();
+      if (this._buyLocks.has(lockKey)) {
+        await this.bot.answerCallbackQuery(q.id, { text: 'Already buying…' });
+        return;
+      }
+      this._buyLocks.add(lockKey);
       await this.bot.answerCallbackQuery(q.id, { text: 'Buying…' });
       try {
         const pos = await this.deps.buyToken(chain, address, undefined, 'telegram-button');
@@ -259,6 +266,8 @@ export class Telegram {
         );
       } catch (e) {
         await this._send(`⚠️ Buy failed: ${e.message}`);
+      } finally {
+        this._buyLocks.delete(lockKey);
       }
     }
   }

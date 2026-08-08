@@ -16,19 +16,29 @@ export const GENE_SPACE = {
   minLiquidity: { min: 5000, max: 200000, sigma: 0.25 },
   minMarketCap: { min: 10000, max: 1000000, sigma: 0.3 },
   maxMarketCap: { min: 500000, max: 50000000, sigma: 0.3 },
-  minHolders: { min: 50, max: 2000, sigma: 0.3 },
+  // max diturunkan dari 2000 → 600: data GMGN riil (section "completed") jarang
+  // menunjukkan holder count >600-700 dalam beberapa jam pertama pasca-graduasi;
+  // genome yg mutasi ke arah 2000 secara matematis hampir selalu 0 kandidat lolos.
+  minHolders: { min: 50, max: 600, sigma: 0.3 },
   minSwaps24h: { min: 50, max: 2000, sigma: 0.3 },
   minAgeMinutes: { min: 1, max: 720, sigma: 0.3 },
   maxAgeMinutes: { min: 720, max: 20160, sigma: 0.25 },
-  minProgress: { min: 0, max: 0.9, sigma: 0.2 },
-  maxProgress: { min: 0.1, max: 1, sigma: 0.2 },
+  // minProgress/maxProgress/maxTop10HolderRate/maxDevHoldRate adalah skala
+  // persentase (0-100), konsisten dgn config.js default & filters.js evaluate()
+  // (lihat gmgn-discovery.js:108-115 yg mengalikan raw fraction *100).
+  minProgress: { min: 0, max: 90, sigma: 0.2 },
+  maxProgress: { min: 10, max: 100, sigma: 0.2 },
   maxRugRatio: { min: 0.1, max: 0.9, sigma: 0.2 },
-  maxBundlerRate: { min: 0.05, max: 0.8, sigma: 0.2 },
+  // min dinaikkan dari 0.05 → 0.5, max dari 0.8 → 0.9: bundlerRate riil pada
+  // token yg baru graduasi observasi ~0.66-1.00 (bundled buy adalah mekanik
+  // launch normal pump.fun, bukan sinyal individual yg diskriminatif di skala
+  // ini) — genome yg mutasi mendekati 0.05 menolak ~100% kandidat by construction.
+  maxBundlerRate: { min: 0.5, max: 0.9, sigma: 0.15 },
   maxInsiderRate: { min: 0.05, max: 0.8, sigma: 0.2 },
-  maxTop10HolderRate: { min: 0.1, max: 0.95, sigma: 0.15 },
+  maxTop10HolderRate: { min: 10, max: 95, sigma: 0.15 },
   maxBotDegenRate: { min: 0.05, max: 0.5, sigma: 0.2 },
   maxFreshWalletRate: { min: 0.1, max: 0.9, sigma: 0.2 },
-  maxDevHoldRate: { min: 0.01, max: 0.5, sigma: 0.2 },
+  maxDevHoldRate: { min: 1, max: 50, sigma: 0.2 },
   maxTotalFee: { min: 0.1, max: 100, sigma: 0.3 },
   minSmartDegenCount: { min: 0, max: 10, sigma: 0.3 },
   stopLossPct: { min: -60, max: -15, sigma: 0.2 },

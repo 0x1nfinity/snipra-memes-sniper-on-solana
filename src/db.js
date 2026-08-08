@@ -223,7 +223,7 @@ export function decisionCacheValid(row, { mcap, holders, now = Date.now() } = {}
 export function checkDecisionCache(chain, address, { mcap, holders } = {}) {
   const row = initDb()
     .prepare(`SELECT * FROM decision_cache WHERE chain = ? AND address = ?`)
-    .get(chain, address);
+    .get(chain, address.toLowerCase());
   if (!decisionCacheValid(row, { mcap, holders })) return null;
   return { verdict: row.verdict, confidence: row.confidence, reason: row.reason };
 }
@@ -239,7 +239,7 @@ export function storeDecisionCache(chain, address, verdict, { confidence, reason
          created_at = excluded.created_at, expires_at = excluded.expires_at,
          mcap_snapshot = excluded.mcap_snapshot, holders_snapshot = excluded.holders_snapshot`
     )
-    .run(chain, address, verdict, confidence ?? 0, reason ?? null, now, now + ttlMs, mcap ?? null, holders ?? null);
+    .run(chain, address.toLowerCase(), verdict, confidence ?? 0, reason ?? null, now, now + ttlMs, mcap ?? null, holders ?? null);
 }
 
 /** Housekeeping: hapus entry cache yang sudah expired. Dipanggil tiap screening cycle. */

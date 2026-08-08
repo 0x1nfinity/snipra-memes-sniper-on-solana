@@ -133,7 +133,7 @@ Reply ONLY JSON: {"verdicts":[{"index":<int>,"action":"buy"|"skip","confidence":
     const prompt = `A memecoin trade just closed. Write ONE short, actionable lesson (max 25 words, ENGLISH) to improve future screening/entry decisions. Focus on a transferable pattern, not this specific token.
 
 TRADE:
-- ${trade.symbol} on ${trade.chain}, held ${trade.holdMinutes?.toFixed(0)} min
+- ${sanitizePromptField(trade.symbol)} on ${trade.chain}, held ${trade.holdMinutes?.toFixed(0)} min
 - Final PnL: ${trade.finalPnlPct?.toFixed(1)}%
 - Close reason: ${trade.closeReason}
 - Entry verdict: ${v ? `action=${v.action ?? '?'} confidence=${v.confidence ?? '?'} risk=${v.risk ?? '?'} — ${v.reason ?? ''}` : 'none'}
@@ -179,7 +179,7 @@ Sertakan HANYA filter yang ingin kamu ubah dari baseline (boleh subset, boleh ko
 
   async deriveLessons(trades, existingLessons) {
     const tradeLines = trades.map((t, i) =>
-      `${i + 1}. ${t.symbol} ${t.chain} — PnL ${t.pnl_pct?.toFixed(1)}% · ` +
+      `${i + 1}. ${sanitizePromptField(t.symbol)} ${t.chain} — PnL ${t.pnl_pct?.toFixed(1)}% · ` +
       `hold ${Math.round(t.hold_minutes ?? 0)}m · alasan: ${t.close_reason}` +
       (t.llm_score ? ` · LLM conf ${t.llm_score.toFixed(2)}` : '')
     ).join('\n');

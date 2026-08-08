@@ -116,6 +116,9 @@ export async function set(args, msg, deps) {
     deps.restartLoops();
     return deps.send(`✅ \`${path}\` = \`${JSON.stringify(value)}\` — timer restarted, now active.`);
   }
+  // screener.filters.*/section, llm.enabled, darwin.enabled/autoEvolve routes
+  // ke strategy.json di bawah strategi aktif (lihat config.js:strategyRoutedPath)
+  // — jadi selalu benar-benar berlaku, tidak perlu peringatan "diabaikan" lagi.
   return deps.send(`✅ \`${path}\` = \`${JSON.stringify(value)}\``);
 }
 

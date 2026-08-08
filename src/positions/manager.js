@@ -82,6 +82,7 @@ export class PositionManager {
       if (rawNum <= 0 && pos.remainingPct > 0) {
         log.warn(`${pos.symbol}: on-chain balance 0 but position still open — auto-closing (reconcile)`);
         const trade = closePosition(pos, { reason: 'auto-close: on-chain balance 0 (reconcile)', receivedNative: 0, txid: pos.lastSellTx || '' });
+        if (!trade) return; // sudah di-close di jalur lain (race) — idempotency guard
         const saldo = await this._saldo(pos.chain);
         this.notify(
           `⚠️ Auto-close\n\n${this._link(pos)} — balance on-chain = 0, likely sold outside the bot\nBalance: ${saldo}`
@@ -304,8 +305,10 @@ export class PositionManager {
           laddered = true;
           if (isLastTier || pos.remainingPct < 1) {
             const trade = closePosition(pos, { reason: 'TP ladder complete', receivedNative: 0, txid: res.txid });
-            await this._notifyClosed(pos, trade.finalPnlPct, 'TP ladder complete');
-            this.onTradeClosed(trade);
+            if (trade) {
+              await this._notifyClosed(pos, trade.finalPnlPct, 'TP ladder complete');
+              this.onTradeClosed(trade);
+            }
             break;
           }
         }
@@ -386,6 +389,7 @@ export class PositionManager {
     recordPartialSell(pos, { pctOfRemaining: sellPctOfRemaining, receivedNative: res.receivedNative, txid: res.txid });
     const pnl = currentPnlPct(pos);
     const trade = moveToMoonbag(pos, { reason: `${reason} → moonbag ${moonbagPct}%`, receivedNative: 0, txid: res.txid });
+    if (!trade) return null; // sudah di-close di jalur lain (race) — idempotency guard
     const saldo = await this._saldo(pos.chain);
     this.notify(
       `🌙 Moonbag\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}\n${moonbagPct}% of original position held, sold ${sellPctOfRemaining.toFixed(1)}% of remainder\nBalance: ${saldo}`
@@ -397,6 +401,7 @@ export class PositionManager {
   async _closeAll(pos, reason) {
     const res = await this.executor.sell(pos.chain, pos.address, 100, { labels: pos.labels, fallbackPriceUsd: pos.currentPrice });
     const trade = closePosition(pos, { reason, receivedNative: res.receivedNative, txid: res.txid });
+    if (!trade) return null; // sudah di-close di jalur lain (race) — idempotency guard
     await this._notifyClosed(pos, trade.finalPnlPct, reason);
     this.onTradeClosed(trade);
     return trade;

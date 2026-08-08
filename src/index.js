@@ -141,6 +141,10 @@ async function shutdown(reason) {
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('unhandledRejection', (e) => log.error('unhandledRejection:', e?.message || e));
+process.on('uncaughtException', (e) => {
+  log.error('uncaughtException:', e?.stack || e?.message || e);
+  shutdown('uncaughtException');
+});
 
 // ===== entrypoint =====
 

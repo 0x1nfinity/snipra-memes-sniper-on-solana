@@ -116,11 +116,21 @@ export async function runEvolve(trigger = 'manual', deps) {
 
 // ===== feedback loop: trade close → darwin fitness + LLM lesson =====
 
+// Reason unreliable — closePosition() dipanggil dgn receivedNative hardcode 0
+// (tidak pernah dicek berapa yg sebenarnya diterima), jadi finalPnlPct ≈ -100%
+// terlepas dari kenyataan. Exclude dari training data Darwin/LLM supaya tidak
+// meracuni fitness genome / lesson dgn PnL palsu.
+const UNRELIABLE_PNL_REASON = 'auto-close: on-chain balance 0 (reconcile)';
+
 export function onTradeClosed(trade) {
   breaker.recordClose(trade.chain, trade.openedAt);
   if (!_deps || !_deps.darwin) return; // guard: deps not yet wired (early startup reconciliation)
   const { darwin, llm, getConfig } = _deps;
   const cfg = getConfig();
+  if (trade.closeReason === UNRELIABLE_PNL_REASON) {
+    log.warn(`skip darwin/llm training for ${trade.symbol}: unreliable PnL (${UNRELIABLE_PNL_REASON})`);
+    return;
+  }
   if (cfg.darwin.enabled) {
     darwin.recordTrade(trade); // tetap catat untuk fitness tracking
     // Auto-evolve disabled — genome hanya berubah via /evolve manual

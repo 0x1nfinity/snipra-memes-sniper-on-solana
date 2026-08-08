@@ -67,8 +67,10 @@ export class StdioBackend {
 
     const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
     if (!resp.ok || !Array.isArray(resp.result?.verdicts)) {
-      // Seluruh batch gagal (agent/protokol unavailable) — failOpen hardcoded.
-      return candidates.map(() => ({ action: 'buy', confidence: 0.5, risk: 'medium', reason: 'LLM unavailable (failOpen)' }));
+      // Seluruh batch gagal (agent/protokol unavailable) — throw, biarkan
+      // screener.js yang memutuskan fail-open/fail-closed berdasarkan
+      // cfg.llm.failOpen (konsisten dgn http-backend.js).
+      throw new Error(resp.error || 'stdio backend: invalid/no response for assess_batch');
     }
     // Verdict per-index yang tidak dijawab LLM dianggap GAGAL (confidence 0), BUKAN buy
     // otomatis — supaya respons batch parsial (mis. model murah yg truncate) tidak diam-diam
@@ -91,7 +93,7 @@ export class StdioBackend {
     const v = trade.llmVerdict;
     const system = 'You are a memecoin trading analyst. Extract one short, actionable lesson from this closed trade.';
     const user = `TRADE:
-- ${trade.symbol} on ${trade.chain}, held ${trade.holdMinutes?.toFixed(0)} min
+- ${sanitizePromptField(trade.symbol)} on ${trade.chain}, held ${trade.holdMinutes?.toFixed(0)} min
 - Final PnL: ${trade.finalPnlPct?.toFixed(1)}%
 - Close reason: ${trade.closeReason}
 - Entry verdict: ${v ? `action=${v.action ?? '?'} confidence=${v.confidence ?? '?'} risk=${v.risk ?? '?'} — ${v.reason ?? ''}` : 'none'}
@@ -141,7 +143,7 @@ Only include filters you want to change from baseline.`;
 
   async deriveLessons(trades, existingLessons) {
     const tradeLines = trades.map((t, i) =>
-      `${i + 1}. ${t.symbol} ${t.chain} — PnL ${t.pnl_pct?.toFixed(1)}% · ` +
+      `${i + 1}. ${sanitizePromptField(t.symbol)} ${t.chain} — PnL ${t.pnl_pct?.toFixed(1)}% · ` +
       `hold ${Math.round(t.hold_minutes ?? 0)}m · alasan: ${t.close_reason}` +
       (t.llm_score ? ` · LLM conf ${t.llm_score.toFixed(2)}` : '')
     ).join('\n');

@@ -15,7 +15,14 @@ const TTL_TRANSIENT = 60 * 1000;
 function cached(key) {
   const hit = cache.get(key);
   if (!hit) return undefined;
-  if (Date.now() - hit.t < hit.ttl) return hit.v;
+  if (Date.now() - hit.t < hit.ttl) {
+    // Touch: re-insert ke akhir Map (JS Map mempertahankan insertion order)
+    // supaya eviction di store() benar-benar LRU (buang yg PALING LAMA
+    // TIDAK DIAKSES), bukan FIFO (buang yg paling lama DIMASUKKAN).
+    cache.delete(key);
+    cache.set(key, hit);
+    return hit.v;
+  }
   // expired — hapus dan return undefined
   cache.delete(key);
   return undefined;
