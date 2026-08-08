@@ -326,6 +326,8 @@ The bot prints `{"type":"ready","version":"2.0.0"}` to stdout when ready.
 | `sell_token` | `{"address":"...","pct":<optional>}` | Sell a position |
 | `close_all_positions` | `{}` | Close all positions |
 
+Beyond these 5, the agent also has 17 bot commands (pause/resume/mode, darwin/evolve/lessons, config get/set, status/stats/papertrades/paperreset/briefings/logs, stop) available via the same `scripts/skill-command.js` CLI — same behavior as their Telegram-command counterparts in standalone mode. Full list + arg shapes: `skills/snipra/SKILL.md`.
+
 ### User Interaction in Skill Mode
 Talk to your agent directly:
 - **Status check**: Agent runs `node scripts/skill-status.js` → relays to you
