@@ -16,7 +16,7 @@ The bot runs fully self-contained. You bring your own LLM API keys (OpenRouter o
 
 ### 2. Skills Agentic Mode (`npm run skill-dev` / `npm run skill`)
 
-The bot runs as a long-lived process communicating via stdin/stdout JSON protocol. Your AI coding agent (Claude Code, Codex, OpenCode, Cursor, etc.) becomes the LLM brain — it receives screening requests, evaluates tokens, records lessons, suggests gene mutations, and handles chat, all through the protocol.
+The bot runs as a long-lived process communicating via stdin/stdout JSON protocol. Your AI coding agent (Claude Code, Codex, OpenCode, OpenClaw, Hermes Agent, or any agent that can read/write the protocol) becomes the LLM brain — it receives screening requests, evaluates tokens, records lessons, suggests gene mutations, and handles chat + 17 bot commands, all through the protocol.
 
 - **LLM**: Your platform agent (no API keys needed)
 - **Interface**: Talk to your agent directly (Telegram is notification-only)
@@ -77,16 +77,6 @@ The bot runs as a long-lived process communicating via stdin/stdout JSON protoco
 | **Gene Suggestions** | LLM analyzes genome data → proposes filter changes (manual review, not auto-applied) |
 | **Chat with Tools** | Natural language chat → LLM calls tools: screen, buy, sell, close all, get positions |
 
-### Darwin Genetic Evolution
-| Feature | Description |
-|---------|-------------|
-| **Genome Population** | 8 genomes, each a complete set of screening + exit thresholds |
-| **EMA Fitness** | Exponential moving average of trade PnL (α=0.2) — favors recent performance |
-| **Epsilon-greedy Selection** | Explores random genomes 25% of the time, exploits best otherwise |
-| **Crossover + Mutation** | Gaussian mutation (σ per gene), uniform crossover from survivor pairs |
-| **LLM-guided Offspring** | Up to 2 genomes per generation proposed by LLM analysis (clamped to safe ranges) |
-| **Safety Bounds** | Security filters never evolved; SL/trailing genes only tighten from baseline |
-
 ### Position Management
 | Feature | Description |
 |---------|-------------|
@@ -111,10 +101,10 @@ The bot runs as a long-lived process communicating via stdin/stdout JSON protoco
 | Feature | Description |
 |---------|-------------|
 | **Platform-agnostic** | Works with any agent that can read/write stdin/stdout |
-| **Multi-platform Installer** | `npm run setup` auto-detects Claude Code, Codex, OpenCode, Cursor |
+| **Multi-platform Installer** | `npm run setup` auto-detects Claude Code, Codex, OpenCode, OpenClaw, Hermes Agent |
 | **Command Queue** | File-based inbox/outbox — agent writes commands, bot processes them |
 | **Status CLI** | `node scripts/skill-status.js` — read-only snapshot of bot state |
-| **Action CLI** | `node scripts/skill-command.js <tool> '<args>'` — execute bot actions |
+| **Action CLI** | `node scripts/skill-command.js <name> '<args>'` — execute the 5 LLM tools + 17 bot commands |
 
 ## Quick Start
 
@@ -163,7 +153,7 @@ npm run skill-dev    # Skill mode, paper trading
 | `npm run skill-dev` | Skill | Paper trading via stdin/stdout protocol |
 | `npm run skill` | Skill | Live trading via stdin/stdout protocol |
 | `npm run setup` | Setup | Install SKILL.md to detected platforms |
-| `npm test` | Dev | Run 43 tests |
+| `npm test` | Dev | Run the test suite (`test/*.test.js`) |
 
 ## Strategy Presets
 
@@ -331,7 +321,7 @@ Beyond these 5, the agent also has 17 bot commands (pause/resume/mode, darwin/ev
 ### User Interaction in Skill Mode
 Talk to your agent directly:
 - **Status check**: Agent runs `node scripts/skill-status.js` → relays to you
-- **Actions**: Agent runs `node scripts/skill-command.js <tool> '<args>'` → relays result
+- **Actions**: Agent runs `node scripts/skill-command.js <name> '<args>'` → relays result
 - **Chat**: Agent forwards your message via the `chat` request type
 
 Full protocol details: `skills/snipra/SKILL.md`
@@ -379,7 +369,7 @@ src/
     openapi.js               # GMGN OpenAPI: wallet_activity, wallet_stats
   skills/
     runner.js                # Skill-mode entry: StdioBackend + command-queue + Telegram (notify-only)
-    command-queue.js         # File-based inbox/outbox for agent-initiated actions
+    command-queue.js         # File-based inbox/outbox — routes to the 5 LLM tools or Telegram#runCommand (17 bot commands)
 scripts/
   install.js                 # Platform detector + SKILL.md installer (npm run setup)
   skill-command.js           # Agent-facing CLI: submit action, wait for result
