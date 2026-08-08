@@ -11,7 +11,7 @@
     "skill": "node src/skills/runner.js --skill-mode",
     "skill-dev": "SNIPRA_MODE=paper node src/skills/runner.js --skill-mode",
     "setup": "node scripts/install.js",
-    "test": "node --test 'test/**/*.test.js'"
+    "test": "node --test test/"
   },
   "engines": {
     "node": ">=18"
