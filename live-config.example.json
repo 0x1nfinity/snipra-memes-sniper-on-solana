@@ -130,7 +130,7 @@
     "moonbagPct": 10
   },
   "monitor": {
-    "intervalSec": 20,
+    "intervalSec": 10,
     // Warn in logs if a position's price has been unavailable for more
     // than N seconds — may indicate a delisted/rugged token.
     "stalePriceWarnSec": 600,

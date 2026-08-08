@@ -63,7 +63,7 @@
     "moonbagPct": 10
   },
   "monitor": {
-    "intervalSec": 20,
+    "intervalSec": 10,
     "stalePriceWarnSec": 600,
     "onchainReconcileSec": 60
   }

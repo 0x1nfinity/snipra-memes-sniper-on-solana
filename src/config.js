@@ -139,7 +139,7 @@ export const DEFAULTS = {
     moonbagPct: 10, // 0 = tanpa moonbag, jual semua
   },
   monitor: {
-    intervalSec: 20,
+    intervalSec: 10,
     // Peringatkan di log jika harga posisi tidak tersedia selama > N detik.
     // Token yang delisted/rug tidak akan punya harga DexScreener; posisi
     // dengan harga stale > threshold ini mungkin perlu pengecekan manual.
