@@ -141,6 +141,7 @@ npm run skill-dev    # Skill mode, paper trading
 | `SOLANA_RPC_URL` | Live mode only | Dedicated RPC endpoint recommended |
 | `OPENROUTER_API_KEY` | Standalone LLM | OpenRouter API key |
 | `DEEPSEEK_API_KEY` | Standalone LLM | DeepSeek API key (alternative) |
+| `MINIMAX_API_KEY` | Standalone LLM | MiniMax API key (Anthropic-compatible; set `llm.provider: minimax`) |
 | `GMGN_API_KEYS` | GMGN (both) | Comma-separated API keys for discovery + wallet tracking |
 
 ### npm Scripts
@@ -357,6 +358,7 @@ src/
   llm/
     llm.js                   # Public API: assessBatch, lessons, chat, suggestGenes, deriveLessons
     http-backend.js          # OpenRouter/DeepSeek HTTP calls (standalone mode)
+    anthropic-backend.js     # Anthropic-compatible backend — MiniMax (standalone mode)
     stdio-backend.js         # stdin/stdout JSON protocol backend (skill mode)
     tools.js                 # Shared LLM tool defs + executor (both modes)
     loops.js                 # Shared screening-cycle/bot-context factory (index.js + runner.js)
@@ -397,6 +399,7 @@ data/                        # All runtime data — git-ignored
 | GoPlus | `api.gopluslabs.io` | Security audit (honeypot, holders, tax) |
 | OpenRouter | `openrouter.ai/api/v1` | LLM provider (standalone mode) |
 | DeepSeek | `api.deepseek.com` | LLM provider (standalone mode) |
+| MiniMax | `api.minimaxi.chat/v1/messages` | LLM provider (standalone mode, Anthropic-compatible) |
 
 ## Go Live Checklist
 

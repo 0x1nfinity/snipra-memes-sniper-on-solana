@@ -131,8 +131,14 @@
     // strategy.json) — set it there once you've configured an API key.
     // Everything below is global LLM tuning that applies whenever the
     // active strategy has llmEnabled: true.
+    // provider: 'openrouter' | 'deepseek'        → OpenAI-compatible (HttpBackend)
+    //          'minimax'                         → Anthropic-compatible Messages API (AnthropicBackend)
+    // Contoh model untuk minimax: 'MiniMax-M3' (default kalau 'model' dikosongkan).
     "provider": "openrouter",
     "model": "deepseek/deepseek-chat-v3-0324",
+    // Override URL untuk provider Anthropic-compatible. Kosong = pakai default per-provider
+    // (lihat PROVIDERS di src/llm/anthropic-backend.js). Hanya relevan kalau provider='minimax'.
+    "anthropicUrl": "",
     // LLM only GATES buy/skip — it never sizes positions (always trading.buyAmount).
     "gateBuy": true,
     // action=buy but confidence below this → still rejected.

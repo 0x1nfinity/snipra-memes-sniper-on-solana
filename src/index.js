@@ -7,6 +7,7 @@ import { Executor } from './trade/executor.js';
 import { PositionManager } from './positions/manager.js';
 import { Darwin } from './darwin/darwin.js';
 import { HttpBackend } from './llm/http-backend.js';
+import { AnthropicBackend } from './llm/anthropic-backend.js';
 import { LLM } from './llm/llm.js';
 import { Telegram } from './telegram/bot.js';
 import { runScreening } from './screener/screener.js';
@@ -35,7 +36,9 @@ function applyMode() {
   syncStateMode();
 }
 const darwin = new Darwin().load();
-const llm = new LLM({ backend: new HttpBackend() }).load();
+const _llmCfg = getConfig().llm;
+const _llmBackend = _llmCfg.provider === 'minimax' ? new AnthropicBackend() : new HttpBackend();
+const llm = new LLM({ backend: _llmBackend }).load();
 
 let paused = false;
 let screenBusyFlag = false;

@@ -160,8 +160,14 @@ export const DEFAULTS = {
     minTradesForFitness: 3,
   },
   llm: {
-    provider: 'openrouter', // 'openrouter' | 'deepseek'
+    // 'openrouter' | 'deepseek' → OpenAI-compatible (HttpBackend)
+    // 'minimax'                  → Anthropic-compatible Messages API (AnthropicBackend)
+    //   contoh model utk minimax: 'MiniMax-M3'
+    provider: 'openrouter',
     model: 'deepseek/deepseek-chat-v3-0324', // model OpenRouter; provider deepseek pakai 'deepseek-chat'
+    // URL override utk provider Anthropic-compatible (kosong = pakai default per provider
+    // di src/llm/anthropic-backend.js). Berguna kalau provider pindah host.
+    anthropicUrl: '',
     // LLM = GATE buy/skip, BUKAN sizer: ukuran posisi selalu = trading.buyAmount.
     gateBuy: true, // LLM ikut menilai sebelum buy (false = langsung buy semua yang lolos filter)
     minConfidence: 0.35, // action=buy tapi confidence di bawah ini → tetap ditolak
