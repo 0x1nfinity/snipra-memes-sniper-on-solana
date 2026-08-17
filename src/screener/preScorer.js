@@ -1,9 +1,10 @@
 /**
- * Pre-scorer berbasis rule, TANPA API call tambahan — semua field sudah
- * tersedia dari hasil discover()+GoPlus enrichment. Dipakai sebagai gate
- * gratis sebelum LLM (lihat legacy/src/pipeline/preScorer.js sebagai referensi
- * desain; field & bobot di sini disesuaikan ke data yang kita punya: DexScreener
- * + GoPlus, bukan GMGN smart-degen/organic-score/bundler-rate milik legacy).
+ * Pre-scorer rule (TANPA API call tambahan — semua field sudah tersedia dari
+ * hasil discover()+GoPlus enrichment).
+ *
+ * PERUBAHAN: tidak pernah gate. Digunakan sebagai additive scoring layer
+ * dalam ranking (lihat screener.js). PRE_SCORE_THRESHOLD di-export untuk
+ * backward compatibility tapi tidak dipakai sebagai gate lagi.
  */
 export const PRE_SCORE_THRESHOLD = 35;
 
@@ -49,5 +50,6 @@ export function preScore(c) {
   if (h1 > -15 && h1 < 100) { score += 5; reasons.push(`h1 ${h1}% (wajar)`); }
   else { reasons.push(`h1 ${h1}% (ekstrem)`); }
 
-  return { score, passed: score >= PRE_SCORE_THRESHOLD, reasons };
+  // Soft: TIDAK gate (lihat doc comment). Caller pakai score untuk ranking.
+  return { score, passed: true, reasons };
 }

@@ -43,7 +43,6 @@ const COMMANDS = [
   { command: 'evolve', description: 'Darwin + LLM analysis → proposed filters (not auto-applied)' },
   { command: 'lessons', description: 'Lessons from LLM analysis' },
   { command: 'logs', description: 'Recent bot logs' },
-  { command: 'gmgnactivity', description: '[debug] Raw GMGN wallet_activity response' },
   { command: 'briefings', description: 'Manual daily briefing (positions, PnL, lessons)' },
   { command: 'help', description: 'Full command list' },
   { command: 'stop', description: 'Shut down the bot' },
@@ -57,7 +56,7 @@ const SKILL_MODE_COMMANDS = new Set([
   'pause', 'resume', 'mode',
   'darwin', 'evolve', 'lessons',
   'config', 'get', 'set',
-  'status', 'stats', 'papertrades', 'paperreset', 'briefings', 'logs', 'gmgnactivity',
+  'status', 'stats', 'papertrades', 'paperreset', 'briefings', 'logs',
   'stop',
 ]);
 

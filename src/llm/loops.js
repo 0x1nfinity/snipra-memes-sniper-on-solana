@@ -1,7 +1,7 @@
 import { getConfig, getActiveMode } from '../config.js';
 import { openPositions, currentPnlPct } from '../positions/state.js';
 import { recentTrades } from '../db.js';
-import { fmtUsd, tokenLink } from '../utils.js';
+import { fmtUsd, tokenLink, boundaryAlignedSetInterval } from '../utils.js';
 import { marketLine, communityLine } from '../telegram/fmt.js';
 import { createLogger } from '../logger.js';
 import { runScreening, retryPriceNative } from '../screener/screener.js';
@@ -189,16 +189,11 @@ export function createScreeningCycle(deps) {
 
 export function startScreeningLoop(screeningCycleFn, getConfigFn) {
   const intervalSec = getConfigFn().telegram.screeningcyclemin * 60;
-  let timer = null;
   if (!intervalSec || intervalSec <= 0) return () => {};
   const periodMs = intervalSec * 1000;
-  const delay = periodMs - (Date.now() % periodMs);
-  timer = setTimeout(() => {
-    screeningCycleFn();
-    timer = setInterval(screeningCycleFn, periodMs);
-  }, delay);
-  log.info(`screening loop start (every ${intervalSec}s, boundary wall-clock, starting in ${Math.round(delay / 1000)}s)`);
-  return () => {
-    if (timer) { clearTimeout(timer); clearInterval(timer); }
-  };
+  const handle = boundaryAlignedSetInterval(periodMs, () => {
+    screeningCycleFn(false).catch((e) => log.error('screening cycle failed:', e.message));
+  });
+  log.info(`screening loop start (every ${intervalSec}s, boundary wall-clock, starting in ${Math.round(handle.delay / 1000)}s)`);
+  return () => handle.stop();
 }

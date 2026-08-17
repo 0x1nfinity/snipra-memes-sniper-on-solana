@@ -1,14 +1,16 @@
 import { getConfig } from '../config.js';
 import { discover } from './dexscreener.js';
 import { tokenSecurity } from './goplus.js';
-import { evaluate, score } from './filters.js';
-import { preScore, PRE_SCORE_THRESHOLD } from './preScorer.js';
+import { evaluate, score, softScore } from './filters.js';
+import { preScore } from './preScorer.js';
+import { hermesScore } from './hermesScoring.js';
 import { checkDecisionCache, storeDecisionCache, pruneExpiredDecisionCache } from '../db.js';
 import { openPositions } from '../positions/state.js';
-import { mapLimit, fetchJson, sleep } from '../utils.js';
+import { mapLimit, sleep } from '../utils.js';
 import { createLogger } from '../logger.js';
 import { discoverFromGmgn } from './gmgn-discovery.js';
 import { normalizePair, bestPair, tokenPairs } from './dexscreener.js';
+import { fetchTokenInfo as cliFetchTokenInfo } from '../gmgn/cli.js';
 
 const log = createLogger('screener');
 
@@ -62,29 +64,30 @@ export function resolveExitGenome(cfg, genes) {
  * fallback ke priceUsd sbg entryPrice → unit mismatch (USD vs SOL) yg bikin
  * PnL/peak jadi ngaco meski entryPrice > 0 (tidak Infinity, tapi salah total).
  * Mutasi candidate langsung.
+ *
+ * Sumber GMGN: gmgn-cli subprocess via src/gmgn/cli.js (lihat juga _refreshPrices
+ * di manager.js yg juga pakai CLI sbg primary PnL source).
  */
 async function enrichPrice(candidate) {
   let gmgnPriceUsd = null;
   let gmgnPriceChange = null;
 
-  // GMGN token/info — priceUsd/priceChange saja, bukan priceNative.
+  // GMGN token/info via subprocess — priceUsd/priceChange saja, bukan priceNative.
   try {
-    const ts = Math.floor(Date.now() / 1000);
-    const q = new URLSearchParams({ chain: 'sol', address: candidate.address, timestamp: ts, client_id: 'snipra' });
-    const info = await fetchJson(`https://openapi.gmgn.ai/v1/token/info?${q}`, {
-      headers: { 'X-APIKEY': getConfig().screener.gmgnApiKeys?.[0] || '', 'Content-Type': 'application/json' },
-    }, { timeoutMs: 10000, retries: 0 });
-    if (info?.data?.price != null) {
-      gmgnPriceUsd = Number(info.data.price) || 0;
+    const info = await cliFetchTokenInfo(candidate.address, { purpose: 'manage' });
+    const p = info?.price || {};
+    const pxUsd = Number(p.price);
+    if (Number.isFinite(pxUsd) && pxUsd > 0) {
+      gmgnPriceUsd = pxUsd;
       gmgnPriceChange = {
-        m5: info.data.price_change_5m ?? 0,
-        h1: info.data.price_change_1h ?? 0,
-        h6: info.data.price_change_6h ?? 0,
-        h24: info.data.price_change_24h ?? 0,
+        m5: p.price_change_5m != null ? Number(p.price_change_5m) : 0,
+        h1: p.price_change_1h != null ? Number(p.price_change_1h) : 0,
+        h6: p.price_change_6h != null ? Number(p.price_change_6h) : 0,
+        h24: p.price_change_24h != null ? Number(p.price_change_24h) : 0,
       };
     }
   } catch (e) {
-    log.debug(`GMGN token/info failed for ${candidate.symbol}: ${e.message}`);
+    log.debug(`gmgn-cli token info failed for ${candidate.symbol}: ${e.message}`);
   }
 
   // DexScreener — wajib utk priceNative. Kalau pair belum terindeks,
@@ -166,9 +169,8 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
     exitGenes = resolveExitGenome(cfg, g.genes);
   }
 
-  const apiKeys = cfg.screener.gmgnApiKeys || [];
-  const section = cfg.screener.section || 'new_creation';
   const launchpads = cfg.screener.filters.launchpads;
+  const interval = cfg.screener.marketInterval || '1h';
   const limit = cfg.screener.maxCandidatesPerCycle * 3;
 
   let candidates = [];
@@ -179,19 +181,20 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
   // === Primary: GMGN ===
   // Server-side pakai baseFilters (bukan genome-tightened) — genome
   // tightening terlalu agresif bisa bikin GMGN return kosong.
-  if (cfg.screener.source === 'gmgn' && apiKeys.length > 0) {
+  // Auth: gmgn-cli baca GMGN_API_KEYS dari project's .env (key[0]=screening).
+  // Tidak perlu pass apiKeys lagi — cli.js handle rotasi internal.
+  if (cfg.screener.source === 'gmgn') {
     const result = await discoverFromGmgn({
-      section,
       filters: baseFilters,
       launchpads,
-      apiKeys,
+      interval,
       limit,
     });
 
     if (result.candidates.length > 0) {
       candidates = result.candidates;
       scannedCount = candidates.length;
-      log.info(`GMGN ${section}: ${candidates.length} candidates received (server-side filtered)`);
+      log.info(`gmgn-cli trending: ${candidates.length} candidates received (server-side filtered)`);
 
       // Enrich harga: GMGN token/info → DexScreener fallback
       const maxEnrich = availSlots != null
@@ -294,18 +297,21 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
     });
   }
 
-  // Pre-scorer
-  if (cfg.llm.enabled && cfg.screener.preScoreEnabled) {
-    candidates = candidates.filter((c) => {
-      const r = preScore(c);
-      c.preScore = r.score;
-      if (!r.passed) log.debug(`${c.symbol} rejected by pre-scorer: score ${r.score} < ${PRE_SCORE_THRESHOLD} (${r.reasons.join(', ')})`);
-      return r.passed;
-    });
+  // Pre-scorer (soft — additive ranking only, tidak gate)
+  // softScore = non-Hermes snipra thresholds sebagai ranking signal
+  // hermesScore = Hermes 8-component composite (~100 pts)
+  // preScore = legacy 6-component signal
+  // score = legacy baseline ranking
+  // Composite = score + softScore.score + hermesScore.score + preScore.score
+  for (const c of candidates) {
+    c.preScore = preScore(c).score;
+    c.softScore = softScore(c, filters).score;
+    c.hermesScore = hermesScore(c).score;
+    c.compositeScore = score(c) + c.softScore + c.hermesScore + c.preScore;
   }
 
   // Ranking
-  candidates.sort((a, b) => score(b) - score(a));
+  candidates.sort((a, b) => (b.compositeScore || 0) - (a.compositeScore || 0));
   candidates = candidates.slice(0, cfg.screener.maxCandidatesPerCycle);
 
   // LLM gate

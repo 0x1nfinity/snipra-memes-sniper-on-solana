@@ -1,6 +1,6 @@
 import { getConfig, getActiveMode } from '../config.js';
 import { nativeSym, fmtHold, fmtNative } from './fmt.js';
-import { tokenLink, fmtPct, sleep } from '../utils.js';
+import { tokenLink, fmtPct, sleep, boundaryAlignedSetInterval } from '../utils.js';
 import { tradeStatsByChain, tradeStatsSince } from '../db.js';
 import { effectiveMax } from '../trade/helpers.js';
 import { getLastBriefingDate, setLastBriefingDate } from '../positions/state.js';
@@ -129,24 +129,20 @@ export async function sendDailyBriefing(deps) {
 
 /** jadwalkan laporan tepat di kelipatan wall-clock (mis. :00, :30) */
 export function startStatusLoop() {
-  const min = getConfig().telegram.managecyclemin;
-  if (statusTimer) { clearTimeout(statusTimer); clearInterval(statusTimer); }
+  if (statusTimer) statusTimer.stop();
   statusTimer = null;
+  const min = getConfig().telegram.managecyclemin;
   if (!min || min <= 0) return;
   const periodMs = min * 60000;
-  const delay = periodMs - (Date.now() % periodMs); // ke boundary berikutnya
   const doReport = () => {
     const fn = consumeBriefingTrigger() ? sendDailyBriefing : sendStatusReport;
     fn().catch((e) => log.warn('report failed:', e.message));
   };
-  statusTimer = setTimeout(() => {
-    doReport();
-    statusTimer = setInterval(doReport, periodMs);
-  }, delay);
-  log.info(`status report loop start (every ${min}min, boundary wall-clock, starting in ${Math.round(delay / 1000)}s)`);
+  statusTimer = boundaryAlignedSetInterval(periodMs, doReport);
+  log.info(`status report loop start (every ${min}min, boundary wall-clock, starting in ${Math.round(statusTimer.delay / 1000)}s)`);
 }
 
 export function stopStatusLoop() {
-  if (statusTimer) { clearTimeout(statusTimer); clearInterval(statusTimer); }
+  if (statusTimer) statusTimer.stop();
   statusTimer = null;
 }

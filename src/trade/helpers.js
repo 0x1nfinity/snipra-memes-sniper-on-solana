@@ -17,37 +17,11 @@ export function effectiveMax(cfg) {
 }
 
 /**
- * Snapshot kondisi market candidate saat entry (liquidity, marketcap, age, dst) —
- * dipakai buat kumpulin data historis utk analisis filter screening nanti (mis.
- * strategy "myself"). Field-nya sama dgn yang dievaluasi filters.js supaya nanti
- * bisa dibandingkan langsung ke config filter yang lagi dipakai.
+ * Snapshot kondisi market candidate saat entry — DIHAPUS di slim pass Fase 1
+ * (dead surface: tdk ada reader runtime, hanya membengkakkan trade record &
+ * kolom SQLite). Kalau analisis historis nanti dibutuhkan, re-introduce dengan
+ * schema yg jelas di keep task yg terpisah.
  */
-function buildEntrySnapshot(c) {
-  return {
-    liquidityUsd: c.liquidityUsd ?? null,
-    marketCap: c.marketCap ?? null,
-    ageMinutes: c.ageMinutes ?? null,
-    volume24h: c.volume24h ?? null,
-    holders: c.holders ?? null,
-    swaps24h: c.traders24h ?? null,
-    buySellRatio: c.buySellRatio ?? null,
-    bondingProgress: c.bondingProgress ?? null,
-    rugRatio: c.rugRatio ?? null,
-    bundlerRate: c.bundlerRate ?? null,
-    insiderRate: c.insiderRate ?? null,
-    top10HolderRate: c.top10HolderRate ?? null,
-    devHoldRate: c.devHoldRate ?? null,
-    botDegenRate: c.botDegenRate ?? null,
-    freshWalletRate: c.freshWalletRate ?? null,
-    smartDegenCount: c.smartDegenCount ?? null,
-    totalFee: c.totalFee ?? null,
-    socials: c.socials ?? null,
-    priceChangeH1: c.priceChange?.h1 ?? null,
-    priceChangeH24: c.priceChange?.h24 ?? null,
-    launchpad: c.launchpad ?? null,
-    section: c.section ?? null,
-  };
-}
 
 export async function resolveCandidate(chainKey, address) {
   const cfg = getConfig();
@@ -132,7 +106,6 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
     slPct: c.exitGenes?.slPct ?? null,
     trailingActivateGainPct: c.exitGenes?.trailingActivateGainPct ?? null,
     trailingTrailPct: c.exitGenes?.trailingTrailPct ?? null,
-    entrySnapshot: buildEntrySnapshot(c),
   });
   if (res._pendingConfirm) {
     pos._confirmPending = true;

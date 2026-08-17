@@ -8,7 +8,7 @@ import {
 import bs58 from 'bs58';
 import { fetchJson, sleep } from '../utils.js';
 import { createLogger } from '../logger.js';
-import { findActivityByTx, getGmgnApiKey } from '../gmgn/openapi.js';
+import { getGmgnApiKey } from '../gmgn/cli.js';
 
 const log = createLogger('solana');
 
@@ -338,20 +338,16 @@ export class SolanaChain {
   }
 
   /**
-   * Resolve SOL received from a sell: GMGN wallet_activity (primary — matches
-   * exactly what the user sees in GMGN's own UI, matched by tx_hash) → on-chain
-   * tx-meta delta (fallback 1) → the swap's own quote estimate (fallback 2, last resort).
+   * Resolve SOL received from a sell: on-chain tx-meta delta (primary — exact SOL
+   * delta for THIS tx, immune to other concurrent wallet activity) → swap's own
+   * quote estimate (fallback, last resort).
+   *
+   * NOTE: dulu ada tier GMGN wallet_activity (deleted saat refactor ke gmgn-cli
+   * subprocess — wallet_activity tidak ada di gmgn-cli). tx-meta sudah cukup
+   * akurat untuk realized PnL; quote hanya kalau tx-meta gagal (biasanya RPC
+   * blip atau indexer lag).
    */
   async _resolveReceivedNative(txid, tokenAddress, quoteFallbackNative) {
-    try {
-      const match = await findActivityByTx(this.address, tokenAddress, txid);
-      if (match) {
-        log.info(`SELL PnL source: gmgn (tx ${txid.slice(0, 8)})`);
-        return Number(match.quote_amount);
-      }
-    } catch (e) {
-      log.warn(`gmgn findActivityByTx failed: ${e.message}`);
-    }
     try {
       const delta = await this._txMetaDelta(txid);
       if (delta != null) {
@@ -361,7 +357,7 @@ export class SolanaChain {
     } catch (e) {
       log.warn(`tx-meta delta failed: ${e.message}`);
     }
-    log.warn(`SELL PnL source: quote-fallback (tx ${txid.slice(0, 8)}) — GMGN and tx-meta both unavailable`);
+    log.warn(`SELL PnL source: quote-fallback (tx ${txid.slice(0, 8)}) — tx-meta unavailable`);
     return quoteFallbackNative;
   }
 

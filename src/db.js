@@ -33,8 +33,7 @@ export function initDb() {
       close_reason  TEXT,
       tp_hits       INTEGER,
       genome_id     TEXT,
-      llm_score     REAL,
-      entry_snapshot TEXT                        -- JSON: liquidity/marketcap/age/holders dst saat entry
+      llm_score     REAL
     );
     CREATE INDEX IF NOT EXISTS idx_trades_mode ON trades(mode, closed_at);
 
@@ -47,17 +46,6 @@ export function initDb() {
       chain  TEXT NOT NULL,
       token  TEXT NOT NULL,
       amount REAL NOT NULL,
-      PRIMARY KEY (chain, token)
-    );
-
-    -- pelacak ATH utk entry guard sniper (harga tertinggi yang pernah kita amati)
-    CREATE TABLE IF NOT EXISTS ath_watch (
-      chain      TEXT NOT NULL,
-      token      TEXT NOT NULL,
-      ath        REAL NOT NULL,
-      pumped     INTEGER NOT NULL DEFAULT 0,  -- 1 = pernah terdeteksi pump ekstrem
-      first_seen INTEGER,
-      updated_at INTEGER,
       PRIMARY KEY (chain, token)
     );
 
@@ -77,13 +65,9 @@ export function initDb() {
     );
     CREATE INDEX IF NOT EXISTS idx_decision_cache_expires ON decision_cache(expires_at);
   `);
-  // Migrasi: tabel trades lama (dibuat sebelum entry_snapshot ditambahkan) tidak
-  // otomatis dapat kolom baru dari CREATE TABLE IF NOT EXISTS di atas.
-  const cols = db.prepare(`PRAGMA table_info(trades)`).all().map((c) => c.name);
-  if (!cols.includes('entry_snapshot')) {
-    db.exec(`ALTER TABLE trades ADD COLUMN entry_snapshot TEXT`);
-    log.info('migrated trades table: added entry_snapshot column');
-  }
+  // NOTE: entry_snapshot column & ath_watch table dihapus (dead surface per slim pass Fase 1).
+  // Existing trades lama yg masih punya entry_snapshot TETAP di schema (tidak di-drop) —
+  // kolom tsb tetap ada di SQLite sampai ALTER TABLE manual. Baris baru tdk tulis entry_snapshot.
   log.info('sqlite ready: data/snipra.db');
   return db;
 }
@@ -95,8 +79,8 @@ export function recordTradeDb(trade, mode) {
     .prepare(
       `INSERT INTO trades (position_id, mode, chain, address, symbol, entry_price, exit_price,
         pnl_pct, amount_native, realized_native, pnl_native, opened_at, closed_at, hold_minutes,
-        close_reason, tp_hits, genome_id, llm_score, entry_snapshot)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        close_reason, tp_hits, genome_id, llm_score)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       trade.id, mode, trade.chain, trade.address, trade.symbol,
@@ -105,8 +89,7 @@ export function recordTradeDb(trade, mode) {
       (trade.realizedNative ?? 0) - (trade.amountNative ?? 0),
       trade.openedAt, trade.closedAt, trade.holdMinutes,
       trade.closeReason, trade.tpHit?.length ?? 0, trade.genomeId,
-      trade.llmVerdict?.confidence ?? null,
-      trade.entrySnapshot ? JSON.stringify(trade.entrySnapshot) : null
+      trade.llmVerdict?.confidence ?? null
     );
 }
 
@@ -184,30 +167,6 @@ export function paperResetWallet(chain, balance) {
     .prepare(`INSERT INTO paper_wallet (chain, balance) VALUES (?, ?)
               ON CONFLICT(chain) DO UPDATE SET balance = excluded.balance`)
     .run(chain, balance);
-}
-
-// ===== ATH watch (entry guard) =====
-
-/**
- * Update ATH terlacak dengan harga high (max dari harga sekarang + implied high
- * yang diturunkan dari priceChange). Tidak ada flag sticky — keputusan guard
- * dihitung ulang dari data harga riil tiap siklus.
- * Return { ath, firstSeen }.
- */
-export function athObserve(chain, token, highEstimate) {
-  const d = initDb();
-  const now = Date.now();
-  const row = d.prepare(`SELECT ath, first_seen FROM ath_watch WHERE chain=? AND token=?`).get(chain, token);
-  if (!row) {
-    d.prepare(
-      `INSERT INTO ath_watch (chain, token, ath, pumped, first_seen, updated_at) VALUES (?, ?, ?, 0, ?, ?)`
-    ).run(chain, token, highEstimate, now, now);
-    return { ath: highEstimate, firstSeen: now };
-  }
-  const ath = Math.max(row.ath, highEstimate);
-  d.prepare(`UPDATE ath_watch SET ath=?, updated_at=? WHERE chain=? AND token=?`)
-    .run(ath, now, chain, token);
-  return { ath, firstSeen: row.first_seen };
 }
 
 // ===== decision cache (LLM token-saving) =====

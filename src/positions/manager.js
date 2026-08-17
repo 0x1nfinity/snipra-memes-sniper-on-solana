@@ -1,11 +1,11 @@
 import { getConfig } from '../config.js';
-import { tokensBatch } from '../screener/dexscreener.js';
 import { nativePriceUsd } from '../prices.js';
+import { fetchTokenInfo as cliFetchTokenInfo } from '../gmgn/cli.js';
 import {
   openPositions, updatePrice, currentPnlPct, recordPartialSell, closePosition,
   moonbags, moveToMoonbag, updateMoonbagPrice,
 } from './state.js';
-import { fmtPct, fmtUsd, tokenLink, dynamicStopLossPercent } from '../utils.js';
+import { fmtPct, fmtUsd, tokenLink, dynamicStopLossPercent, mapLimit } from '../utils.js';
 import { createLogger } from '../logger.js';
 
 const log = createLogger('positions');
@@ -117,115 +117,102 @@ export class PositionManager {
     const moons = moonbags();
     if (positions.length === 0 && moons.length === 0) return;
 
-    // Batch per chain via DexScreener /tokens/v1 (posisi aktif + moonbag sekaligus)
-    const byChain = new Map();
-    for (const p of positions) {
-      if (!byChain.has(p.chain)) byChain.set(p.chain, { pos: [], moon: [] });
-      byChain.get(p.chain).pos.push(p);
-    }
-    for (const m of moons) {
-      if (!byChain.has(m.chain)) byChain.set(m.chain, { pos: [], moon: [] });
-      byChain.get(m.chain).moon.push(m);
-    }
-    for (const [chainKey, { pos: list, moon }] of byChain.entries()) {
-      const dsId = cfg.chains[chainKey]?.dexscreenerId;
-      if (!dsId) continue;
+    // === Primary: gmgn-cli token info per address (parallel, 5 concurrent) ===
+    // Hermes-style PnL: setiap posisi aktif di-poll harga via subprocess.
+    // Key yg dipakai: GMGN_API_KEYS[2] (purpose='pnl') — beda dari screening/manage
+    // agar 3 key di .env tidak share rate-limit budget.
+    const allAddrs = [...new Set([
+      ...positions.map((p) => p.address),
+      ...moons.map((m) => m.address),
+    ])];
+    const priceMap = new Map(); // address → { priceNative, liqUsd, h1, source }
+    await mapLimit(allAddrs, 5, async (addr) => {
       try {
-        const addrs = [...new Set([...list, ...moon].map((p) => p.address))];
-        // Retry sekali jika DexScreener gagal (rate limit / transient error)
-        let pairs;
-        try {
-          pairs = await tokensBatch(dsId, addrs);
-        } catch (e) {
-          log.warn(`refresh price ${chainKey} attempt 1 failed: ${e.message}, retrying…`);
-          await new Promise((r) => setTimeout(r, 2000));
-          pairs = await tokensBatch(dsId, addrs);
-        }
-        const priceOf = (p) => {
-          const mine = pairs
-            .filter((x) => x?.baseToken?.address?.toLowerCase() === p.address.toLowerCase())
-            .sort((a, b) => (b?.liquidity?.usd || 0) - (a?.liquidity?.usd || 0));
-          const pair = mine[0]; // pair paling likuid — konsisten dengan bestPair() di eksekusi trade
-          // Pakai priceNative sbg source of truth — konsisten dgn eksekusi trade
-          // yg juga pakai priceNative. priceUsd dari DexScreener sering tidak
-          // sinkron dgn priceNative (selisih 2-25x), menyebabkan trigger trailing/
-          // TP/SL nyala di harga phantom.
-          const priceNative = Number(pair?.priceNative);
-          return {
-            price: priceNative > 0 ? priceNative : (Number(pair?.priceUsd) || 0),
-            liqUsd: Number(pair?.liquidity?.usd) || 0,
-            h1: Number(pair?.priceChange?.h1),
-          };
-        };
-        const minLiq = cfg.trading.priceMinLiquidityUsd ?? 0;
-        const now = Date.now();
-        const staleMs = (cfg.monitor.stalePriceWarnSec ?? 600) * 1000;
-        for (const p of list) {
-          const { price, liqUsd, h1 } = priceOf(p);
-          if (Number.isFinite(h1)) {
-            p._volPct = Math.abs(h1);
-            p._volPctAt = Date.now();
-          } else if (p._volPctAt && Date.now() - p._volPctAt > 30 * 60 * 1000) {
-            // h1 data stale > 30 min — reset, fall back to base SL without widening
-            p._volPct = undefined;
-            p._volPctAt = undefined;
-          }
-          const dexPriceUsable = price > 0 && !(liqUsd > 0 && liqUsd < minLiq);
-          if (!dexPriceUsable) {
-            try {
-              const chain = this.executor.chain(p.chain);
-              if (typeof chain.quoteSellPriceUsd === 'function') {
-                const nativePx = await chain.quoteSellPriceUsd(p.address).catch(() => null);
-                if (nativePx > 0) {
-                  // nativePx sudah dalam SOL/token — simpan langsung sbg native
-                  const prev = p.currentPrice;
-                  const sameSource = p._priceSource === 'quote';
-                  if (updatePrice(p, nativePx) && prev > 0 && sameSource) {
-                    p._tickDropPct = Math.max(0, ((prev - nativePx) / prev) * 100);
-                  } else {
-                    p._tickDropPct = 0;
-                  }
-                  p._priceSource = 'quote';
-                  continue;
-                }
-              }
-            } catch (e) {
-              // executor.chain() bisa throw kalau chain di-disable saat runtime (hot-reload config),
-              // atau nativePriceUsd/lain gagal — best-effort, jangan biarkan lempar keluar loop
-              // (posisi/moonbag lain di chain yg sama masih harus lanjut refresh normal).
-              log.debug(`${p.symbol}: quote fallback failed: ${e.message}`);
-            }
-            p._tickDropPct = 0;
-            // Peringatkan jika harga stale >stalePriceWarnSec (token mungkin delisted/rug)
-            if (now - p.lastPriceAt > staleMs && p.lastPriceAt > 0) {
-              log.warn(`${p.symbol}: price unavailable for ${Math.round((now - p.lastPriceAt) / 1000)}s — token may be delisted`);
-            }
-            continue;
-          }
-          const prev = p.currentPrice;
-          const sameSource = p._priceSource === 'dex';
-          if (updatePrice(p, price) && prev > 0 && sameSource) {
-            // Penurunan dalam SATU tick (positif = turun) — dipakai deteksi flash/glitch di SL.
-            // Hanya dihitung bila tick sebelumnya juga dari DexScreener (lihat catatan di atas).
-            p._tickDropPct = Math.max(0, ((prev - price) / prev) * 100);
-          } else {
-            p._tickDropPct = 0;
-          }
-          p._priceSource = 'dex';
-        }
-        for (const m of moon) {
-          const { price, liqUsd } = priceOf(m);
-          if (!(price > 0)) continue;
-          // Same sanity guard as active positions: skip low-liquidity pairs
-          if (liqUsd > 0 && liqUsd < minLiq) {
-            log.warn(`moonbag ${m.symbol}: price $${price} ignored (liquidity $${liqUsd.toFixed(0)} < $${minLiq})`);
-            continue;
-          }
-          updateMoonbagPrice(m, price);
+        const info = await cliFetchTokenInfo(addr, { purpose: 'pnl' });
+        const priceUsd = Number(info?.price?.price);
+        const liqUsd = Number(info?.liquidity) || 0;
+        const h1 = Number(info?.price?.price_change_1h);
+        if (Number.isFinite(priceUsd) && priceUsd > 0) {
+          // Convert USD → SOL via nativePriceUsd (cached, 60s TTL).
+          let priceNative = priceUsd;
+          try {
+            const solUsd = await nativePriceUsd('solana');
+            if (solUsd > 0) priceNative = priceUsd / solUsd;
+          } catch { /* keep USD value as last resort */ }
+          priceMap.set(addr, {
+            priceNative,
+            liqUsd,
+            h1: Number.isFinite(h1) ? h1 : undefined,
+            source: 'gmgn-cli',
+          });
         }
       } catch (e) {
-        log.warn(`refresh price ${chainKey} failed (after retry):`, e.message);
+        log.debug(`gmgn-cli token info ${addr.slice(0, 6)}… failed: ${e.message}`);
       }
+    });
+
+    const minLiq = cfg.trading.priceMinLiquidityUsd ?? 0;
+    const now = Date.now();
+    const staleMs = (cfg.monitor.stalePriceWarnSec ?? 600) * 1000;
+    for (const p of positions) {
+      const data = priceMap.get(p.address);
+      const usable = data && data.priceNative > 0 && !(data.liqUsd > 0 && data.liqUsd < minLiq);
+      if (!usable) {
+        // === Fallback 1: Jupiter quote (live only — paper tidak punya wallet) ===
+        try {
+          const chain = this.executor.chain(p.chain);
+          if (typeof chain.quoteSellPriceUsd === 'function') {
+            const nativePx = await chain.quoteSellPriceUsd(p.address).catch(() => null);
+            if (nativePx > 0) {
+              const prev = p.currentPrice;
+              const sameSource = p._priceSource === 'quote';
+              if (updatePrice(p, nativePx) && prev > 0 && sameSource) {
+                p._tickDropPct = Math.max(0, ((prev - nativePx) / prev) * 100);
+              } else {
+                p._tickDropPct = 0;
+              }
+              p._priceSource = 'quote';
+              if (data && Number.isFinite(data.h1)) {
+                p._volPct = Math.abs(data.h1);
+                p._volPctAt = Date.now();
+              }
+              continue;
+            }
+          }
+        } catch (e) {
+          log.debug(`${p.symbol}: Jupiter quote fallback failed: ${e.message}`);
+        }
+        p._tickDropPct = 0;
+        if (now - p.lastPriceAt > staleMs && p.lastPriceAt > 0) {
+          log.warn(`${p.symbol}: price unavailable for ${Math.round((now - p.lastPriceAt) / 1000)}s — token may be delisted`);
+        }
+        continue;
+      }
+      const prev = p.currentPrice;
+      const sameSource = p._priceSource === data.source;
+      if (updatePrice(p, data.priceNative) && prev > 0 && sameSource) {
+        p._tickDropPct = Math.max(0, ((prev - data.priceNative) / prev) * 100);
+      } else {
+        p._tickDropPct = 0;
+      }
+      p._priceSource = data.source;
+      if (Number.isFinite(data.h1)) {
+        p._volPct = Math.abs(data.h1);
+        p._volPctAt = Date.now();
+      } else if (p._volPctAt && Date.now() - p._volPctAt > 30 * 60 * 1000) {
+        // h1 data stale > 30 min — reset, fall back to base SL without widening
+        p._volPct = undefined;
+        p._volPctAt = undefined;
+      }
+    }
+    for (const m of moons) {
+      const data = priceMap.get(m.address);
+      if (!data || !(data.priceNative > 0)) continue;
+      if (data.liqUsd > 0 && data.liqUsd < minLiq) {
+        log.warn(`moonbag ${m.symbol}: price $${data.priceNative} ignored (liquidity $${data.liqUsd.toFixed(0)} < $${minLiq})`);
+        continue;
+      }
+      updateMoonbagPrice(m, data.priceNative);
     }
   }
 

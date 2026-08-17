@@ -74,6 +74,9 @@ export const DEFAULTS = {
     maxCandidatesPerCycle: 3,
     source: 'gmgn',                     // 'gmgn' | 'dexscreener'
     preScoreEnabled: true,
+    // Interval untuk gmgn-cli market trending. '1h' = snappy (default),
+    // '24h' = full-day momentum. Source: gmgn-cli help.
+    marketInterval: '1h',
   },
   trading: {
     buyAmount: 0.3, // ukuran posisi PERSIS dalam SOL (satu-satunya kontrol ukuran)
@@ -183,7 +186,6 @@ export const DEFAULTS = {
   },
   telegram: {
     notifyScreening: true,
-    notifyPriceMoves: false,
     screeningcyclemin: 60, // interval loop screening (cari kandidat baru), dalam menit
     managecyclemin: 30, // interval laporan evaluasi posisi (saldo + PnL) + notif; 0 = nonaktif
   },
@@ -263,9 +265,8 @@ function buildConfig(mode) {
     },
   };
 
-  // gmgnApiKeys dibaca dari env, bukan dari file config
-  const keysEnv = process.env.GMGN_API_KEYS || '';
-  merged.screener.gmgnApiKeys = keysEnv.split(',').map((k) => k.trim()).filter(Boolean);
+  // gmgn-cli (subprocess) membaca GMGN_API_KEYS langsung dari project's .env
+  // lewat src/gmgn/cli.js — tidak perlu expose gmgnApiKeys ke config runtime.
 
   // strategy.json dibaca ulang tiap buildConfig() (sama seperti live/paper-config.json)
   // supaya edit manual ikut hot-reload tanpa restart proses.

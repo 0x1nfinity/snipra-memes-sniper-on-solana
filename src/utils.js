@@ -163,3 +163,32 @@ export function dynamicStopLossPercent({
   const blended = (base + dynamic) / 2;
   return Math.max(floorPercent, Math.min(ceilingPercent, blended));
 }
+
+/**
+ * Schedule fn() to fire at the next wall-clock boundary multiple of periodMs,
+ * then once every periodMs thereafter. Common pattern utk loop periodik yg
+ * ingin fire di :00, :30, dst (bukan offset acak dari startup time).
+ *
+ * Return { stop() } untuk cancel. Period < 1s dianggap invalid (return noop).
+ *
+ * Implementasi: setTimeout(delay) → fire → setInterval(periodMs).
+ * Stop() clear kedua-duanya, idempotent.
+ */
+export function boundaryAlignedSetInterval(periodMs, fn) {
+  if (!Number.isFinite(periodMs) || periodMs < 1000) {
+    return { stop: () => {}, delay: 0 };
+  }
+  const delay = periodMs - (Date.now() % periodMs);
+  let interval = null;
+  const timeout = setTimeout(() => {
+    fn();
+    interval = setInterval(fn, periodMs);
+  }, delay);
+  return {
+    delay,
+    stop() {
+      clearTimeout(timeout);
+      if (interval) clearInterval(interval);
+    },
+  };
+}
