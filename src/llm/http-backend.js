@@ -180,6 +180,60 @@ Sertakan HANYA filter yang ingin kamu ubah dari baseline (boleh subset, boleh ko
     };
   }
 
+  async evaluatePositions(positions, fmtUsd) {
+    if (!positions || positions.length === 0) return [];
+
+    const lines = positions.map((p, i) => {
+      const e = p.entryMetrics || {};
+      const m = p.currentMetrics || {};
+      const peakPnlPct = p.entryPrice > 0 ? ((p.peakPrice - p.entryPrice) / p.entryPrice) * 100 : 0;
+      const currentPnlPct = p.entryPrice > 0 ? ((p.currentPrice - p.entryPrice) / p.entryPrice) * 100 : 0;
+      const ageMin = Math.round((Date.now() - p.openedAt) / 60000);
+      const tpCount = p.tpHit?.length ?? 0;
+      const tpTotal = (p.cfgTpLadderLen ?? 3); // di-inject oleh caller
+      return (
+        `[${i}] ${sanitizePromptField(p.symbol)} (${p.chain}) — held ${ageMin}m\n` +
+        `  ENTRY:  price ${fmtUsd(e.priceUsd ?? p.entryPrice)} | MC ${fmtUsd(e.marketCap)} | holders ${e.holders ?? '?'} | top10 ${e.top10Pct != null ? e.top10Pct.toFixed(0) + '%' : '?'} | smart_wallets ${e.smartDegenCount ?? '?'}\n` +
+        `  NOW:    price ${fmtUsd(m.priceUsd ?? p.currentPrice)} | MC ${fmtUsd(m.marketCap)} | holders ${m.holders ?? '?'} | top10 ${m.top10Pct != null ? m.top10Pct.toFixed(0) + '%' : '?'} | smart_wallets ${m.smartDegenCount ?? '?'}\n` +
+        `  DELTA:  PnL ${currentPnlPct.toFixed(1)}% (peak ${peakPnlPct.toFixed(1)}%) | TP tiers hit ${tpCount}/${tpTotal} | trailing ${p.trailingActive ? 'active' : 'inactive'} | remaining ${p.remainingPct?.toFixed(0) ?? 100}%`
+      );
+    }).join('\n\n');
+
+    const prompt = `You are managing open positions for an aggressive Solana memecoin sniper. Your job: decide whether each open position is still WORTH HOLDING based on how the metrics changed since entry.
+
+For each position below, compare ENTRY metrics (when we bought) vs NOW metrics (current). Decide:
+- HOLD: position still healthy — holders not collapsing, top10 not concentrating, MC not dumping, smart money still present. Hold.
+- CLOSE: momentum lost — holders dumped, top10 concentrated (rug risk), MC collapsed significantly, smart money exited, or peak PnL was good and we're now fading. EXIT NOW even if SL/TP not triggered.
+
+Default to HOLD unless there is CLEAR evidence the position should be exited. We already have hard SL/TP/trailing as a backstop — only override them when you see something they don't.
+
+Be data-driven. Compare numbers, don't speculate.
+
+POSITIONS (${positions.length}):
+${lines}
+
+Reply ONLY JSON: {"verdicts":[{"index":<int>,"action":"hold"|"close","confidence":<0-1>,"reason":"<1 short sentence, English>"}, ...]} — exactly one entry per index (0 to ${positions.length - 1}).`;
+
+    const maxTokens = Math.max(800, Math.min(4000, 250 + 150 * positions.length));
+    const content = await this._chat([{ role: 'user', content: prompt }], { maxTokens });
+    const parsed = tryParseJson(content);
+
+    const out = Array.from({ length: positions.length }, () => ({
+      action: 'hold', confidence: 0, reason: 'no verdict returned',
+    }));
+    const verdicts = Array.isArray(parsed?.verdicts) ? parsed.verdicts : [];
+    for (const v of verdicts) {
+      const i = Number(v.index);
+      if (!Number.isInteger(i) || i < 0 || i >= positions.length) continue;
+      out[i] = {
+        action: v.action === 'close' ? 'close' : 'hold',
+        confidence: Math.max(0, Math.min(1, Number(v.confidence) || 0)),
+        reason: String(v.reason || '').slice(0, 300),
+      };
+    }
+    return out;
+  }
+
   async deriveLessons(trades, existingLessons) {
     const tradeLines = trades.map((t, i) =>
       `${i + 1}. ${sanitizePromptField(t.symbol)} ${t.chain} — PnL ${t.pnl_pct?.toFixed(1)}% · ` +

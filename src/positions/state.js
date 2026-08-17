@@ -127,7 +127,7 @@ function recordCooldown(chain, address, cooldownMinutes) {
   state.cooldowns[key] = { count: stillInWindow ? prev.count + 1 : 1, lastCloseAt: now };
 }
 
-export function addPosition({ chain, address, symbol, pairAddress, labels, entryPrice, amountNative, tokensRaw, txid, genomeId, llmVerdict, slPct, trailingActivateGainPct, trailingTrailPct }) {
+export function addPosition({ chain, address, symbol, pairAddress, labels, entryPrice, amountNative, tokensRaw, txid, genomeId, llmVerdict, slPct, trailingActivateGainPct, trailingTrailPct, entryMetrics }) {
   const pos = {
     id: `${chain}-${address.slice(0, 8)}-${Date.now()}`,
     chain,
@@ -153,6 +153,8 @@ export function addPosition({ chain, address, symbol, pairAddress, labels, entry
     slPct: slPct ?? null,
     trailingActivateGainPct: trailingActivateGainPct ?? null,
     trailingTrailPct: trailingTrailPct ?? null,
+    // Snapshot metrik saat entry — dipakai LLM manage eval bandingkan entry vs current.
+    entryMetrics: entryMetrics || null,
   };
   state.open.push(pos);
   persist();

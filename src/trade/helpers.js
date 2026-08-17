@@ -17,11 +17,20 @@ export function effectiveMax(cfg) {
 }
 
 /**
- * Snapshot kondisi market candidate saat entry — DIHAPUS di slim pass Fase 1
- * (dead surface: tdk ada reader runtime, hanya membengkakkan trade record &
- * kolom SQLite). Kalau analisis historis nanti dibutuhkan, re-introduce dengan
- * schema yg jelas di keep task yg terpisah.
+ * Snapshot metrik market saat entry — dipakai oleh LLM manage evaluation untuk
+ * bandingkan entry vs current (holders/top10/mcap/smart). Hanya field yang
+ * relevan untuk keputusan hold/close LLM, bukan data collection penuh.
+ * Disimpan di position.entryMetrics (in-memory) — tidak di-persist ke SQLite.
  */
+export function buildEntryMetrics(c) {
+  return {
+    holders: c.holders ?? null,
+    top10Pct: c.top10Pct ?? (c.top10HolderRate != null ? c.top10HolderRate : null),
+    marketCap: c.marketCap ?? null,
+    smartDegenCount: c.smartDegenCount ?? null,
+    priceUsd: c.priceUsd ?? null,
+  };
+}
 
 export async function resolveCandidate(chainKey, address) {
   const cfg = getConfig();
@@ -106,6 +115,7 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
     slPct: c.exitGenes?.slPct ?? null,
     trailingActivateGainPct: c.exitGenes?.trailingActivateGainPct ?? null,
     trailingTrailPct: c.exitGenes?.trailingTrailPct ?? null,
+    entryMetrics: buildEntryMetrics(c),
   });
   if (res._pendingConfirm) {
     pos._confirmPending = true;

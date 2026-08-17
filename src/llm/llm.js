@@ -168,4 +168,27 @@ export class LLM {
     if (!this._backend) return null;
     return this._backend.suggestGenes({ geneSpace, currentFilters, genomes, trades, lessonsText });
   }
+
+  /**
+   * Evaluasi posisi terbuka: bandingkan entryMetrics vs currentMetrics, minta
+   * LLM putuskan hold/close per posisi. Caller yg enforce verdict (force-close).
+   *
+   * Input: positions[] dengan field {entryMetrics, currentMetrics, symbol, chain,
+   *   entryPrice, currentPrice, peakPrice, openedAt, tpHit, trailingActive,
+   *   remainingPct, cfgTpLadderLen}.
+   * Output: [{action: 'hold'|'close', confidence: 0-1, reason: string}]
+   *
+   * Return null kalau backend tidak available atau positions kosong.
+   * Caller catch & log — bukan throw (manage cycle harus lanjut jalan).
+   */
+  async evaluatePositions(positions) {
+    if (!this._backend) return null;
+    if (!positions || positions.length === 0) return [];
+    try {
+      return await this._backend.evaluatePositions(positions, fmtUsd);
+    } catch (e) {
+      log.warn('evaluatePositions failed:', e.message);
+      return null;
+    }
+  }
 }

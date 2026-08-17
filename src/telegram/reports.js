@@ -1,10 +1,11 @@
 import { getConfig, getActiveMode } from '../config.js';
+import { openPositions, currentPnlPct, closePosition, getLastBriefingDate, setLastBriefingDate } from '../positions/state.js';
 import { nativeSym, fmtHold, fmtNative } from './fmt.js';
 import { tokenLink, fmtPct, sleep, boundaryAlignedSetInterval } from '../utils.js';
 import { tradeStatsByChain, tradeStatsSince } from '../db.js';
 import { effectiveMax } from '../trade/helpers.js';
-import { getLastBriefingDate, setLastBriefingDate } from '../positions/state.js';
 import { createLogger } from '../logger.js';
+import { fetchTokenInfo as cliFetchTokenInfo } from '../gmgn/cli.js';
 
 const log = createLogger('reports');
 
@@ -134,15 +135,121 @@ export function startStatusLoop() {
   const min = getConfig().telegram.managecyclemin;
   if (!min || min <= 0) return;
   const periodMs = min * 60000;
-  const doReport = () => {
+  const doCycle = async () => {
+    // Manage evaluation duluan — force-close LLM berjalan sebelum report.
+    // Kalau close berhasil, report subsequent sudah reflect posisi baru.
+    try {
+      await runManageEvaluation(_sendDeps);
+    } catch (e) {
+      log.warn('manage evaluation failed:', e.message);
+    }
     const fn = consumeBriefingTrigger() ? sendDailyBriefing : sendStatusReport;
     fn().catch((e) => log.warn('report failed:', e.message));
   };
-  statusTimer = boundaryAlignedSetInterval(periodMs, doReport);
+  statusTimer = boundaryAlignedSetInterval(periodMs, doCycle);
   log.info(`status report loop start (every ${min}min, boundary wall-clock, starting in ${Math.round(statusTimer.delay / 1000)}s)`);
 }
 
 export function stopStatusLoop() {
   if (statusTimer) statusTimer.stop();
   statusTimer = null;
+}
+
+/**
+ * Manage evaluation cycle — setiap managecyclemin (30m default):
+ *   1. Ambil posisi terbuka
+ *   2. Fetch current metrics via gmgn-cli token info (parallel per posisi)
+ *   3. Inject entryMetrics + currentMetrics + cfgTpLadderLen ke tiap posisi
+ *   4. Panggil LLM.evaluatePositions → array of {action, confidence, reason}
+ *   5. Force-close posisi dengan action=close + confidence >= minConfidence
+ *      (override SL/TP — LLM bilang keluar, keluar)
+ *
+ * Tidak throw — best-effort. Kalau LLM error/down → skip, posisi tetap di
+ * PnL tracker (10s hard stop) untuk proteksi.
+ */
+export async function runManageEvaluation(deps) {
+  const d = deps || _sendDeps;
+  const cfg = getConfig();
+  if (!cfg.llm.enabled) return { evaluated: 0, closed: 0 };
+  if (!d.llm || !d.llm.available()) return { evaluated: 0, closed: 0 };
+  if (d.paused()) return { evaluated: 0, closed: 0 };
+
+  const positions = openPositions();
+  if (positions.length === 0) return { evaluated: 0, closed: 0 };
+
+  // Fetch current metrics per posisi (parallel via Promise.all — limit 5)
+  const addrToMetrics = new Map();
+  await Promise.all(positions.map(async (p) => {
+    try {
+      const info = await cliFetchTokenInfo(p.address, { purpose: 'manage' });
+      const priceUsd = Number(info?.price?.price);
+      addrToMetrics.set(p.address, {
+        priceUsd: Number.isFinite(priceUsd) && priceUsd > 0 ? priceUsd : null,
+        marketCap: Number(info?.market_cap) || null,
+        holders: info?.holder_count != null ? Number(info.holder_count) : null,
+        top10Pct: info?.top_10_holder_rate != null ? Number(info.top_10_holder_rate) * 100 : null,
+        smartDegenCount: info?.smart_wallets != null ? Number(info.smart_wallets)
+          : (info?.wallet_tags_stat?.smart_wallets != null ? Number(info.wallet_tags_stat.smart_wallets) : null),
+      });
+    } catch (e) {
+      log.debug(`runManageEvaluation: fetch ${p.address.slice(0, 6)} failed: ${e.message}`);
+    }
+  }));
+
+  const tpLadderLen = cfg.tpLadder?.length ?? 3;
+  const positionsForLlm = positions.map((p) => ({
+    ...p,
+    currentMetrics: addrToMetrics.get(p.address) || {},
+    cfgTpLadderLen: tpLadderLen,
+  }));
+
+  const verdicts = await d.llm.evaluatePositions(positionsForLlm);
+  if (!verdicts || verdicts.length === 0) return { evaluated: positions.length, closed: 0 };
+
+  const minConf = cfg.llm.minConfidence;
+  let closedCount = 0;
+  const closeLines = [];
+
+  for (let i = 0; i < verdicts.length; i++) {
+    const v = verdicts[i];
+    const pos = positions[i];
+    if (!pos || !openPositions().some((x) => x.id === pos.id)) continue; // sudah di-close di tempat lain
+    if (v.action !== 'close') continue;
+    if (v.confidence < minConf) continue;
+
+    const pnlPct = currentPnlPct(pos);
+    try {
+      const res = await d.executor.sell(pos.chain, pos.address, 100, {
+        labels: pos.labels,
+        fallbackPriceUsd: pos.currentPrice,
+      });
+      const trade = closePosition(pos, {
+        reason: `manage-LLM (conf ${v.confidence.toFixed(2)})`,
+        receivedNative: res.receivedNative,
+        txid: res.txid,
+      });
+      if (trade && d.onTradeClosed) {
+        try { d.onTradeClosed(trade); } catch (e) { log.warn('onTradeClosed failed:', e.message); }
+      }
+      closedCount++;
+      const slug = cfg.chains[pos.chain]?.gmgnSlug;
+      closeLines.push(
+        `  🤖 LLM closed ${tokenLink(pos.symbol, slug, pos.address)} — ${fmtPct(pnlPct)}\n` +
+        `     reason: ${v.reason || '(none)'} · conf ${v.confidence.toFixed(2)}`
+      );
+      log.info(`manage-LLM closed ${pos.symbol} @ ${fmtPct(pnlPct)} (conf ${v.confidence.toFixed(2)}): ${v.reason}`);
+    } catch (e) {
+      log.warn(`manage-LLM close ${pos.symbol} failed: ${e.message}`);
+    }
+  }
+
+  if (closeLines.length > 0) {
+    d.telegram.notify(
+      `🤖 Manage Cycle — LLM force-close\n\n` +
+      `${closedCount} posisi di-close oleh LLM (override SL/TP):\n\n` +
+      closeLines.join('\n')
+    );
+  }
+
+  return { evaluated: positions.length, closed: closedCount };
 }

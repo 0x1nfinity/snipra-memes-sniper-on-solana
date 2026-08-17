@@ -26,26 +26,14 @@ const log = createLogger('strategies');
 // Bootstrap default — written to strategy.json on first run if the file is
 // missing, mirroring live-config.json's ensureConfigFiles() pattern.
 const DEFAULT_STRATEGIES = {
+  // Strategy "myself" = pakai config user (live-config.json + paper-config.json)
+  // apa adanya. Null fields → applyStrategy() skip → live-config nilai dipakai.
   myself: {
-    section: 'completed',
-    llmEnabled: true,
-    darwinEnabled: true,
-    autoEvolve: false,
-    filters: {
-      launchpads: ['Pump.fun', 'Moonshoot', 'Bonk', 'Bags', 'Believe', 'Liquid'],
-      minVolume24h: 30000, maxVolume24h: null,
-      minLiquidity: 15000, maxLiquidity: null,
-      minMarketCap: 15000, maxMarketCap: 20000000,
-      minHolders: 150, maxHolders: null,
-      minSwaps24h: 200, maxSwaps24h: null,
-      minAgeMinutes: 60, maxAgeMinutes: 5760,
-      minProgress: 0, maxProgress: 100,
-      maxRugRatio: 0.3, maxBundlerRate: 0.9, maxInsiderRate: 0.3,
-      minTotalFee: null, maxTotalFee: null,
-      maxBotDegenRate: null, maxTop10HolderRate: 45, maxDevHoldRate: 10,
-      minSmartDegenCount: null, maxFreshWalletRate: null,
-      blockHoneypot: true, blockWashTrading: true,
-    },
+    section: null,
+    llmEnabled: null,
+    darwinEnabled: null,
+    autoEvolve: null,
+    filters: null,
   },
   sniper: {
     section: 'new_creation',
@@ -185,15 +173,19 @@ export function applyStrategy(config, strategyName) {
   }
   if (!strat) return config; // strategy.json completely empty/corrupted — leave config untouched
 
-  return {
-    ...config,
-    screener: {
-      ...config.screener,
-      filters: structuredClone(strat.filters),
-      section: strat.section,
-      source: 'gmgn',
-    },
-    llm: { ...config.llm, enabled: strat.llmEnabled },
-    darwin: { ...config.darwin, enabled: strat.darwinEnabled, autoEvolve: strat.autoEvolve },
-  };
+  // Null field = "follow live-config.json". Ini dipakai oleh strategy "myself"
+  // yang sengaja TIDAK override (sesuai intent: "myself = pakai config user").
+  // Strategy lain (sniper/degen/wait_for_dip/smart_money) punya nilai sendiri
+  // dan override penuh.
+  const out = { ...config };
+  if (strat.filters !== null && strat.filters !== undefined) {
+    out.screener = { ...config.screener, filters: structuredClone(strat.filters), source: 'gmgn' };
+  } else {
+    out.screener = { ...config.screener, source: 'gmgn' };
+  }
+  if (strat.section != null) out.screener = { ...out.screener, section: strat.section };
+  if (strat.llmEnabled != null) out.llm = { ...config.llm, enabled: strat.llmEnabled };
+  if (strat.darwinEnabled != null) out.darwin = { ...config.darwin, enabled: strat.darwinEnabled };
+  if (strat.autoEvolve != null) out.darwin = { ...out.darwin, autoEvolve: strat.autoEvolve };
+  return out;
 }
