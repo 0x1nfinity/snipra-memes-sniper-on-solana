@@ -399,7 +399,7 @@ data/                        # All runtime data — git-ignored
 | GoPlus | `api.gopluslabs.io` | Security audit (honeypot, holders, tax) |
 | OpenRouter | `openrouter.ai/api/v1` | LLM provider (standalone mode) |
 | DeepSeek | `api.deepseek.com` | LLM provider (standalone mode) |
-| MiniMax | `api.minimaxi.chat/v1/messages` | LLM provider (standalone mode, Anthropic-compatible) |
+| MiniMax | `api.minimax.io/anthropic/v1/messages` | LLM provider (standalone mode, Anthropic-compatible) |
 
 ## Go Live Checklist
 

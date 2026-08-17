@@ -23,9 +23,11 @@ const log = createLogger('anthropic-backend');
 
 // Per-provider Anthropic-compatible config. `url` is overridable via
 // live-config.json:llm.anthropicUrl in case the provider host changes.
+// NOTE: URL MiniMax yang benar = /anthropic/v1/messages (di bawah subdomain
+// api.minimax.io). Sebelumnya saya tulis api.minimaxi.chat (404) — salah.
 const PROVIDERS = {
   minimax: {
-    url: 'https://api.minimaxi.chat/v1/messages',
+    url: 'https://api.minimax.io/anthropic/v1/messages',
     keyEnv: 'MINIMAX_API_KEY',
     defaultModel: 'MiniMax-M3',
   },
