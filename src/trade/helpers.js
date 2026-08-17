@@ -1,4 +1,4 @@
-import { getConfig } from '../config.js';
+import { getConfig, getActiveMode } from '../config.js';
 import { findOpen, inCooldown, openPositions, addPosition, closePosition,
          recordPartialSell, findMoonbag, removeMoonbag, recordMoonbagPartialSell } from '../positions/state.js';
 import { tokenPairs, bestPair, normalizePair } from '../screener/dexscreener.js';
@@ -6,6 +6,7 @@ import { evaluate } from '../screener/filters.js';
 import { shortAddr } from '../utils.js';
 import { createLogger } from '../logger.js';
 import { breaker } from './circuit-breaker.js';
+import { appendDecision } from '../decision-log.js';
 
 const log = createLogger('trade');
 
@@ -117,6 +118,20 @@ export async function buyToken(chainKey, address, amountNative, source, candidat
     trailingTrailPct: c.exitGenes?.trailingTrailPct ?? null,
     entryMetrics: buildEntryMetrics(c),
   });
+  // Audit trail: log buy decision (entry price, LLM verdict, source).
+  appendDecision({
+    type: 'buy',
+    mode: getActiveMode(),
+    chain: chainKey,
+    address: c.address,
+    symbol: c.symbol,
+    source,
+    entryPriceUsd: c.priceUsd ?? null,
+    amountNative: res.spentNative,
+    genomeId: c.genomeId || null,
+    llmVerdict: c.llmVerdict || null,
+    entryMetrics: pos.entryMetrics,
+  });
   if (res._pendingConfirm) {
     pos._confirmPending = true;
     log.warn(`position opened with pending confirm [${source}]: ${c.symbol} @ ${c.priceUsd} — will reconcile on next tick`);
@@ -147,9 +162,36 @@ export async function sellToken(address, pct, executor, onTradeClosed) {
     const res = await executor.sell(pos.chain, pos.address, pct, { labels: pos.labels, fallbackPriceUsd: pos.currentPrice });
     if (pct >= 100) {
       const trade = closePosition(pos, { reason: 'manual sell', receivedNative: res.receivedNative, txid: res.txid });
-      if (trade) onTradeClosed(trade); // null = sudah di-close di jalur lain (race) — idempotency guard
+      if (trade) {
+        // Audit trail: manual full sell
+        appendDecision({
+          type: 'sell',
+          mode: getActiveMode(),
+          chain: pos.chain,
+          address: pos.address,
+          symbol: pos.symbol,
+          reason: 'manual',
+          pnlPct: trade.finalPnlPct,
+          pnlNative: (trade.realizedNative ?? 0) - (trade.amountNative ?? 0),
+          receivedNative: res.receivedNative,
+          txid: res.txid,
+        });
+        onTradeClosed(trade);
+      }
     } else {
       recordPartialSell(pos, { pctOfRemaining: pct, receivedNative: res.receivedNative, txid: res.txid });
+      // Audit trail: manual partial sell
+      appendDecision({
+        type: 'sell',
+        mode: getActiveMode(),
+        chain: pos.chain,
+        address: pos.address,
+        symbol: pos.symbol,
+        reason: 'manual-partial',
+        pnlPct: ((pos.currentPrice - pos.entryPrice) / pos.entryPrice) * 100,
+        pnlNative: ((res.receivedNative || 0) - (pos.amountNative * (pct / 100))),
+        receivedNative: res.receivedNative,
+      });
     }
     return { ...res, chain: pos.chain };
   }

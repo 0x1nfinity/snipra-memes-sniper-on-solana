@@ -3,6 +3,7 @@ import path from 'path';
 import { DATA_DIR, getConfig } from '../config.js';
 import { fmtUsd } from '../utils.js';
 import { createLogger } from '../logger.js';
+import { readRecentDecisions, summarizeDecisions } from '../decision-log.js';
 
 const log = createLogger('llm');
 const LESSONS_FILE = path.join(DATA_DIR, 'lessons.json');
@@ -44,12 +45,35 @@ export class LLM {
   _lessonBlock() {
     const { maxLessons } = getConfig().llm;
     const recent = this._lessons.slice(-maxLessons);
-    if (recent.length === 0) return '(none yet)';
-    return recent.map((l, i) => `${i + 1}. [${l.outcome}] ${l.text}`).join('\n');
+    const lessonsText = recent.length === 0
+      ? '(none yet)'
+      : recent.map((l, i) => `${i + 1}. [${l.outcome}] ${l.text}`).join('\n');
+    // Tambahkan decision log ringkasan (10 screening + 10 sell + 5 manage_eval)
+    // supaya LLM juga evaluasi berdasarkan DECISION HISTORY, bukan cuma performance
+    // summary. Decisions = apa yang kita putuskan + alasannya, lessons = ringkasan
+    // pasca-trade. Dua-duanya penting untuk menghindari "confirmation bias loop"
+    // (LLM cuma belajar dari outcome tanpa tahu decision context-nya).
+    const screeningDecisions = readRecentDecisions(200).filter((d) => d.type === 'screening').slice(-10);
+    const sellDecisions = readRecentDecisions(200).filter((d) => d.type === 'sell').slice(-10);
+    const manageDecisions = readRecentDecisions(200).filter((d) => d.type === 'manage_eval').slice(-5);
+    const decisionContext =
+      `\n=== RECENT SCREENING DECISIONS (10 terakhir) ===\n` +
+      (summarizeDecisions(screeningDecisions) || '(none)') +
+      `\n=== RECENT SELL DECISIONS (10 terakhir) ===\n` +
+      (summarizeDecisions(sellDecisions) || '(none)') +
+      `\n=== RECENT MANAGE EVAL DECISIONS (5 terakhir) ===\n` +
+      (summarizeDecisions(manageDecisions) || '(none)');
+    return lessonsText + decisionContext;
   }
 
   getLessons(n = 10) {
     return this._lessons.slice(-n);
+  }
+
+  /** Drop semua lesson (untuk /paperreset) — tulis ulang file kosong. */
+  clearLessons() {
+    this._lessons = [];
+    this._persistLessons();
   }
 
   async assessBatch(candidates) {

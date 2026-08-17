@@ -93,15 +93,17 @@ export async function papertrades(args, msg, deps) {
 }
 
 export async function paperreset(args, msg, deps) {
-  const { balances, closedCount } = await deps.executor.paperReset({
+  const { balances, closedCount, removed } = await deps.executor.paperReset({
     llm: deps.llm,
     positionManager: deps.positionManager,
     notify: (m) => deps.send(m),
   });
   const lines = Object.values(balances).map((v) => `${v} ${nativeSym()}`);
+  const removedText = (removed && removed.length > 0) ? `\n🗑️ Cleared: ${removed.join(', ')}` : '';
   return deps.send(
-    `♻️ *Paper reset*\n${lines.join('\n')}\n` +
-    `💰 Balance reset · ${closedCount} positions closed · trade history kept`
+    `♻️ *Full paper reset*\n${lines.join('\n')}\n` +
+    `💰 Balance reset · ${closedCount} positions closed` +
+    removedText
   );
 }
 

@@ -1,9 +1,10 @@
-import { getConfig } from '../config.js';
+import { getConfig, getActiveMode } from '../config.js';
 import { discover } from './dexscreener.js';
 import { tokenSecurity } from './goplus.js';
 import { evaluate, score, softScore } from './filters.js';
 import { preScore } from './preScorer.js';
 import { hermesScore } from './hermesScoring.js';
+import { appendDecisionBatch } from '../decision-log.js';
 import { checkDecisionCache, storeDecisionCache, pruneExpiredDecisionCache } from '../db.js';
 import { openPositions } from '../positions/state.js';
 import { mapLimit, sleep } from '../utils.js';
@@ -312,7 +313,38 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
 
   // Ranking
   candidates.sort((a, b) => (b.compositeScore || 0) - (a.compositeScore || 0));
-  candidates = candidates.slice(0, cfg.screener.maxCandidatesPerCycle);
+  const rankedBeforeLlm = candidates.slice(0, cfg.screener.maxCandidatesPerCycle);
+
+  // === Decision log: catat SEMUA candidate yg lolos ranking (pre-LLM) ===
+  // Memberikan LLM konteks tentang kandidat yg dekat-masuk-jauh-dari-masuk.
+  const decisions = [];
+  for (const c of rankedBeforeLlm) {
+    decisions.push({
+      type: 'screening',
+      mode: getActiveMode(),
+      chain: c.chain,
+      address: c.address,
+      symbol: c.symbol,
+      scores: {
+        composite: c.compositeScore,
+        preScore: c.preScore,
+        softScore: c.softScore,
+        hermesScore: c.hermesScore,
+      },
+      metrics: {
+        holders: c.holders ?? null,
+        top10Pct: c.top10Pct ?? c.top10HolderRate ?? null,
+        marketCap: c.marketCap ?? null,
+        smartDegenCount: c.smartDegenCount ?? null,
+        liquidityUsd: c.liquidityUsd ?? null,
+        volume24h: c.volume24h ?? null,
+        ageMinutes: c.ageMinutes ?? null,
+      },
+      decision: 'pending',
+      llmAction: null, llmConfidence: null, llmRisk: null, llmReason: null,
+    });
+  }
+  candidates = rankedBeforeLlm;
 
   // LLM gate
   if (cfg.llm.enabled && cfg.llm.gateBuy && llm && candidates.length > 0) {
@@ -335,10 +367,20 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
       batch.forEach((candidate, idx) => {
         const v = verdicts[idx];
         candidate.llmVerdict = v;
+        // Cari index di decisions array untuk update (matches by address)
+        const dIdx = decisions.findIndex((d) => d.address === candidate.address && d.chain === candidate.chain);
+        if (dIdx >= 0) {
+          decisions[dIdx].llmAction = v.action;
+          decisions[dIdx].llmConfidence = v.confidence;
+          decisions[dIdx].llmRisk = v.risk;
+          decisions[dIdx].llmReason = v.reason;
+        }
         if (v.action === 'buy' && v.confidence >= cfg.llm.minConfidence) {
           gated.push(candidate);
+          if (dIdx >= 0) decisions[dIdx].decision = 'buy';
         } else {
           log.info(`LLM rejected ${candidate.symbol} (${v.action}, conf ${v.confidence}): ${v.reason}`);
+          if (dIdx >= 0) decisions[dIdx].decision = 'skip';
           if (cfg.llm.decisionCacheEnabled) {
             try {
               storeDecisionCache(candidate.chain, candidate.address, 'skip', {
@@ -355,6 +397,9 @@ export async function runScreening({ darwin, llm, availSlots } = {}) {
         }
       });
     }
+    // Write all LLM-verdict decisions at end of cycle (not per-batch) —
+    // appendDecisionBatch sudah include semua entry yg di-update in-place.
+    appendDecisionBatch(decisions);
     candidates = gated;
   }
 

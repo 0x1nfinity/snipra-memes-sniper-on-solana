@@ -103,13 +103,24 @@ export class Executor {
   }
 
   /**
-   * Reset lingkungan paper tanpa hapus riwayat:
-   *  1. Tutup semua posisi paper terbuka
+   * Reset paper state — UI "kita ulangi dari awal":
+   *  1. Tutup semua posisi paper terbuka (force-close via /sell 100%)
    *  2. Reset saldo tiap paper wallet → startBalance
-   * Riwayat trade & stats TIDAK dihapus.
+   *  3. Hapus SQLite trades (kedua mode) — fresh audit start
+   *  4. Hapus SQLite decision_cache — LLM verdict cache drop
+   *  5. Hapus decision-log.jsonl — fresh decision history
+   *  6. Hapus lessons.json — fresh LLM lesson learning
+   *  7. Hapus darwin.json — fresh genome evolution
+   *  8. Hapus positions.live.json — live state juga bersih (konsisten dengan paper)
+   *  9. Reset positions.paper.json (kosong) — handled by closeAllPositions di step 1
+   * Darwin genome direstart ke generation 0; lessons drop ke 0; cache invalidates.
+   *
+   * Catatan: file backup (.bak) di data/ TIDAK disentuh — itu snapshot historis.
    */
   async paperReset({ llm, positionManager, notify } = {}) {
-    // 1. Tutup semua posisi terbuka
+    const removed = [];
+
+    // 1. Tutup semua posisi paper terbuka
     let closedCount = 0;
     const { openPositions } = await import('../positions/state.js');
     const openList = [...openPositions()];
@@ -126,8 +137,72 @@ export class Executor {
       if (c instanceof PaperChain) balances[key] = await c.resetWallet();
     }
 
-    log.info(`paper reset: ${closedCount} positions closed, balance reset — history kept`);
-    return { balances, closedCount };
+    // 3. Hapus SQLite trades (kedua mode)
+    try {
+      const dbMod = await import('../db.js');
+      dbMod.deleteTrades('paper');
+      dbMod.deleteTrades('live');
+      removed.push('trades (paper+live)');
+    } catch (e) { log.warn('deleteTrades failed:', e.message); }
+
+    // 4. Hapus decision cache (SQLite)
+    try {
+      const dbMod = await import('../db.js');
+      dbMod.pruneExpiredDecisionCache();
+      // prune hanya hapus yg expired; kita juga perlu hapus yg masih aktif
+      // — langsung DELETE all
+      const Database = (await import('better-sqlite3')).default;
+      const fs = await import('fs');
+      const path = await import('path');
+      const { DATA_DIR } = await import('../config.js');
+      const dbFile = path.join(DATA_DIR, 'snipra.db');
+      if (fs.existsSync(dbFile)) {
+        const tmpDb = new Database(dbFile);
+        tmpDb.prepare('DELETE FROM decision_cache').run();
+        tmpDb.close();
+        removed.push('decision_cache');
+      }
+    } catch (e) { log.warn('clear decision_cache failed:', e.message); }
+
+    // 5. Hapus decision log
+    try {
+      const dlMod = await import('../decision-log.js');
+      dlMod.clearDecisionLog();
+      removed.push('decision-log');
+    } catch (e) { log.warn('clearDecisionLog failed:', e.message); }
+
+    // 6. Hapus lessons.json
+    if (llm && typeof llm.clearLessons === 'function') {
+      try { llm.clearLessons(); removed.push('lessons'); }
+      catch (e) { log.warn('clearLessons failed:', e.message); }
+    }
+
+    // 7. Hapus Darwin genome state
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const { DATA_DIR } = await import('../config.js');
+      const darwinFile = path.join(DATA_DIR, 'darwin.json');
+      if (fs.existsSync(darwinFile)) {
+        fs.unlinkSync(darwinFile);
+        removed.push('darwin');
+      }
+    } catch (e) { log.warn('delete darwin.json failed:', e.message); }
+
+    // 8. Hapus positions.live.json (live state kosong — fresh start)
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const { DATA_DIR } = await import('../config.js');
+      const liveFile = path.join(DATA_DIR, 'positions.live.json');
+      if (fs.existsSync(liveFile)) {
+        fs.unlinkSync(liveFile);
+        removed.push('positions.live');
+      }
+    } catch (e) { log.warn('delete positions.live.json failed:', e.message); }
+
+    log.info(`paper reset full: ${closedCount} positions closed, balance reset, removed: ${removed.join(', ') || '(none)'}`);
+    return { balances, closedCount, removed };
   }
 
   async balances() {

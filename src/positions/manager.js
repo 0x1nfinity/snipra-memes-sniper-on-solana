@@ -7,8 +7,31 @@ import {
 } from './state.js';
 import { fmtPct, fmtUsd, tokenLink, dynamicStopLossPercent, mapLimit } from '../utils.js';
 import { createLogger } from '../logger.js';
+import { appendDecision } from '../decision-log.js';
+import { getActiveMode } from '../config.js';
 
 const log = createLogger('positions');
+
+/**
+ * Normalize close reason string → canonical short tag untuk audit log.
+ * Input bisa verbose string dari manager.js (mis. "Trailing stop: dropped 5.0% from peak",
+ * "SL (dynamic -45.0%)", "Max hold time reached"). Output selalu salah satu dari:
+ *   'SL' | 'TP1' | 'TP2' | 'TP3' | 'trailing' | 'moonbag' | 'manual'
+ *   | 'MAX_HOLD' | 'SIDEWAYS_TIMEOUT' | 'manage-LLM' | 'paper reset' | 'auto-close: on-chain balance 0'
+ */
+function normalizeCloseReason(reason) {
+  if (!reason) return 'manual';
+  const r = String(reason).toLowerCase();
+  if (r.startsWith('sl') || r.includes('stopdown')) return 'SL';
+  if (r.startsWith('max hold')) return 'MAX_HOLD';
+  if (r.startsWith('sideways')) return 'SIDEWAYS_TIMEOUT';
+  if (r.startsWith('manage-llm')) return 'manage-LLM';
+  if (r.startsWith('trailing')) return 'trailing';
+  if (r.startsWith('tp ladder')) return 'TP1'; // fallback for "TP ladder complete"
+  if (r.startsWith('paper reset')) return 'paper reset';
+  if (r.includes('reconcile') || r.includes('on-chain balance 0')) return 'auto-close: on-chain balance 0';
+  return 'manual';
+}
 
 /**
  * Exit karena waktu, independen dari PnL: MAX_HOLD (batas hold total) dan
@@ -83,6 +106,18 @@ export class PositionManager {
         log.warn(`${pos.symbol}: on-chain balance 0 but position still open — auto-closing (reconcile)`);
         const trade = closePosition(pos, { reason: 'auto-close: on-chain balance 0 (reconcile)', receivedNative: 0, txid: pos.lastSellTx || '' });
         if (!trade) return; // sudah di-close di jalur lain (race) — idempotency guard
+        // Audit trail: auto-close (on-chain balance 0)
+        appendDecision({
+          type: 'sell',
+          mode: getActiveMode(),
+          chain: pos.chain,
+          address: pos.address,
+          symbol: pos.symbol,
+          reason: 'auto-close: on-chain balance 0',
+          pnlPct: trade.finalPnlPct,
+          pnlNative: (trade.realizedNative ?? 0) - (trade.amountNative ?? 0),
+          receivedNative: 0,
+        });
         const saldo = await this._saldo(pos.chain);
         this.notify(
           `⚠️ Auto-close\n\n${this._link(pos)} — balance on-chain = 0, likely sold outside the bot\nBalance: ${saldo}`
@@ -286,6 +321,19 @@ export class PositionManager {
             tierIndex: i,
             txid: res.txid,
           });
+          // Audit trail: partial sell (TP ladder hit)
+          appendDecision({
+            type: 'sell',
+            mode: getActiveMode(),
+            chain: pos.chain,
+            address: pos.address,
+            symbol: pos.symbol,
+            reason: `TP${i + 1}`,
+            pnlPct: pnl,
+            pnlNative: (res.receivedNative || 0) - (pos.amountNative * (tier.sellPct / 100) * (1 - pos.realizedNative / Math.max(pos.amountNative, 1e-9))),
+            receivedNative: res.receivedNative,
+            tierIndex: i,
+          });
           this.notify(
             `🎯 Take Profit — Tier ${i + 1}\n\n${this._link(pos)} — PnL ${fmtPct(pnl)}, sold ${tier.sellPct}%\nRemaining position: ${pos.remainingPct.toFixed(1)}%`
           );
@@ -375,6 +423,18 @@ export class PositionManager {
     const res = await this.executor.sell(pos.chain, pos.address, sellPctOfRemaining, { labels: pos.labels, fallbackPriceUsd: pos.currentPrice });
     recordPartialSell(pos, { pctOfRemaining: sellPctOfRemaining, receivedNative: res.receivedNative, txid: res.txid });
     const pnl = currentPnlPct(pos);
+    // Audit trail: partial sell to moonbag
+    appendDecision({
+      type: 'sell',
+      mode: getActiveMode(),
+      chain: pos.chain,
+      address: pos.address,
+      symbol: pos.symbol,
+      reason: 'moonbag',
+      pnlPct: pnl,
+      pnlNative: (res.receivedNative || 0) - (pos.amountNative * (sellPctOfRemaining / 100)),
+      receivedNative: res.receivedNative,
+    });
     const trade = moveToMoonbag(pos, { reason: `${reason} → moonbag ${moonbagPct}%`, receivedNative: 0, txid: res.txid });
     if (!trade) return null; // sudah di-close di jalur lain (race) — idempotency guard
     const saldo = await this._saldo(pos.chain);
@@ -389,6 +449,19 @@ export class PositionManager {
     const res = await this.executor.sell(pos.chain, pos.address, 100, { labels: pos.labels, fallbackPriceUsd: pos.currentPrice });
     const trade = closePosition(pos, { reason, receivedNative: res.receivedNative, txid: res.txid });
     if (!trade) return null; // sudah di-close di jalur lain (race) — idempotency guard
+    // Audit trail: full close (SL / TP / trailing / time-exit / manual)
+    appendDecision({
+      type: 'sell',
+      mode: getActiveMode(),
+      chain: pos.chain,
+      address: pos.address,
+      symbol: pos.symbol,
+      reason: normalizeCloseReason(reason),
+      pnlPct: trade.finalPnlPct,
+      pnlNative: (trade.realizedNative ?? 0) - (trade.amountNative ?? 0),
+      receivedNative: res.receivedNative,
+      txid: res.txid,
+    });
     await this._notifyClosed(pos, trade.finalPnlPct, reason);
     this.onTradeClosed(trade);
     return trade;

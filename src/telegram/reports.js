@@ -6,6 +6,7 @@ import { tradeStatsByChain, tradeStatsSince } from '../db.js';
 import { effectiveMax } from '../trade/helpers.js';
 import { createLogger } from '../logger.js';
 import { fetchTokenInfo as cliFetchTokenInfo } from '../gmgn/cli.js';
+import { appendDecisionBatch } from '../decision-log.js';
 
 const log = createLogger('reports');
 
@@ -209,6 +210,7 @@ export async function runManageEvaluation(deps) {
   const minConf = cfg.llm.minConfidence;
   let closedCount = 0;
   const closeLines = [];
+  const evalEntries = [];
 
   for (let i = 0; i < verdicts.length; i++) {
     const v = verdicts[i];
@@ -242,6 +244,40 @@ export async function runManageEvaluation(deps) {
       log.warn(`manage-LLM close ${pos.symbol} failed: ${e.message}`);
     }
   }
+
+  // Audit trail: catat SEMUA evaluate decision (hold + close), bukan hanya yg
+  // di-close — supaya LLM ke depan bisa baca history lengkap (hold → confidence rendah,
+  // close → confidence tinggi, dll) untuk pelajaran.
+  for (let i = 0; i < verdicts.length; i++) {
+    const v = verdicts[i];
+    const pos = positions[i];
+    if (!pos) continue;
+    const em = pos.entryMetrics || {};
+    const cm = addrToMetrics.get(pos.address) || {};
+    evalEntries.push({
+      type: 'manage_eval',
+      mode: getActiveMode(),
+      chain: pos.chain,
+      address: pos.address,
+      symbol: pos.symbol,
+      pnlPct: pos.entryPrice > 0 ? ((pos.currentPrice - pos.entryPrice) / pos.entryPrice) * 100 : 0,
+      peakPnlPct: pos.entryPrice > 0 ? ((pos.peakPrice - pos.entryPrice) / pos.entryPrice) * 100 : 0,
+      entryMetrics: em,
+      currentMetrics: cm,
+      delta: {
+        holdersPct: em.holders != null && cm.holders != null
+          ? ((cm.holders - em.holders) / Math.max(em.holders, 1)) * 100 : null,
+        top10PctDelta: em.top10Pct != null && cm.top10Pct != null ? cm.top10Pct - em.top10Pct : null,
+        smartDegenDelta: em.smartDegenCount != null && cm.smartDegenCount != null
+          ? cm.smartDegenCount - em.smartDegenCount : null,
+      },
+      llmAction: v.action,
+      llmConfidence: v.confidence,
+      llmReason: v.reason,
+      action: v.action === 'close' && v.confidence >= minConf && closedCount > 0 ? 'close_force' : 'hold',
+    });
+  }
+  appendDecisionBatch(evalEntries);
 
   if (closeLines.length > 0) {
     d.telegram.notify(
